@@ -9,7 +9,13 @@ import pandas as pd
 import streamlit as st
 
 from passion_excel.display import display_linked_file
-from passion_excel.files import preview_file_found, resolve_linked_file
+from passion_excel.files import (
+    has_valid_path_roots,
+    parse_file_names,
+    parse_path_roots,
+    preview_notice_files_count,
+    resolve_linked_file,
+)
 from passion_excel.notice_helpers import normalize_value
 
 
@@ -204,26 +210,29 @@ def render_document_panel(
     *,
     selected_row: pd.Series,
     file_col: str,
+    path_col: str,
+    use_path_column: bool,
     assets_dir: str,
     assets_path: Path | None,
     assets_dir_valid: bool,
 ) -> None:
-    """Panneau droit : état du lien fichier + prévisualisation ou message clair."""
-    expected = normalize_value(selected_row.get(file_col, "")).strip()
+    """Panneau droit : un ou plusieurs fichiers ; chemins relatifs optionnels sous la racine."""
+    names = parse_file_names(selected_row.get(file_col))
 
     st.markdown(
         """
 <div class="pe-notice-shell">
-  <p class="pe-kicker" style="margin-bottom:0.5rem;">Document associé</p>
+  <p class="pe-kicker" style="margin-bottom:0.5rem;">Documents associés</p>
 </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if not expected:
+    if not names:
         st.markdown(
             '<div class="pe-card pe-card--doc"><p class="pe-empty-hint">'
-            "Aucun fichier n’est indiqué pour cette notice dans la colonne choisie."
+            "Aucun nom de fichier n’est indiqué dans la colonne choisie "
+            "(séparez plusieurs fichiers par point-virgule ou retour à la ligne)."
             "</p></div>",
             unsafe_allow_html=True,
         )
@@ -233,7 +242,7 @@ def render_document_panel(
         st.markdown(
             '<div class="pe-card pe-card--doc"><p class="pe-empty-hint">'
             "Indiquez le <strong>dossier racine</strong> des documents dans la barre latérale "
-            "pour afficher le fichier.</p></div>",
+            "pour afficher les fichiers.</p></div>",
             unsafe_allow_html=True,
         )
         return
@@ -247,28 +256,19 @@ def render_document_panel(
         )
         return
 
-    resolved = resolve_linked_file(assets_path, expected)
+    path_subroots: list[str] | None
+    if use_path_column:
+        path_subroots = parse_path_roots(selected_row.get(path_col))
+    else:
+        path_subroots = None
 
-    st.markdown(
-        f"""
-<div class="pe-notice-shell">
-  <div class="pe-card pe-card--doc">
-    <p class="pe-kicker" style="margin-bottom:0.35rem;">Fichier attendu</p>
-    <p style="margin:0;font-size:1rem;font-weight:600;color:#1c1917;">{_esc(expected)}</p>
-  </div>
-</div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    if resolved is None:
+    if use_path_column and path_subroots and not has_valid_path_roots(assets_path, path_subroots):
         st.markdown(
             """
 <div class="pe-card pe-card--doc" style="border-color:#fecaca;background:#fef2f2;">
   <p class="pe-empty-hint" style="color:#991b1b;margin:0;">
-    <strong>Document introuvable.</strong>
-    Il n’a pas été retrouvé sous le dossier indiqué
-    (ni à la racine, ni dans les sous-dossiers avec ce nom).
+    <strong>Dossiers introuvables.</strong> Aucun des chemins indiqués dans la colonne chemins relatifs
+    n’existe pas sous le dossier racine. Vérifiez les noms de dossiers.
   </p>
 </div>
             """,
@@ -276,29 +276,74 @@ def render_document_panel(
         )
         return
 
-    st.markdown(
-        f"""
+    if use_path_column:
+        pr_display = parse_path_roots(selected_row.get(path_col))
+        if pr_display:
+            zones = " ; ".join(pr_display)
+            st.caption(f"Dossiers parcourus (sous la racine) : `{zones}` — recherche **récursive** dans chacun.")
+        else:
+            st.caption("Aucun sous-dossier imposé : recherche sur **toute** l’arborescence sous la racine.")
+
+    for i, expected in enumerate(names):
+        st.markdown(
+            f"""
 <div class="pe-notice-shell">
-  <p class="pe-doc-path">{_esc(str(resolved))}</p>
+  <div class="pe-card pe-card--doc">
+    <p class="pe-kicker" style="margin-bottom:0.35rem;">Fichier {i + 1} / {len(names)}</p>
+    <p style="margin:0;font-size:1rem;font-weight:600;color:#1c1917;">{_esc(expected)}</p>
+  </div>
 </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    display_linked_file(resolved, show_filename_header=False)
+            """,
+            unsafe_allow_html=True,
+        )
+
+        resolved = resolve_linked_file(assets_path, expected, path_subroots=path_subroots)
+
+        if resolved is None:
+            st.markdown(
+                """
+<div class="pe-card pe-card--doc" style="border-color:#fecaca;background:#fef2f2;">
+  <p class="pe-empty-hint" style="color:#991b1b;margin:0;">
+    <strong>Introuvable.</strong> Pas de correspondance dans les dossiers autorisés
+    (y compris sous-dossiers internes), pour ce nom.
+  </p>
+</div>
+                """,
+                unsafe_allow_html=True,
+            )
+            continue
+
+        st.markdown(
+            f'<p class="pe-doc-path">{_esc(str(resolved))}</p>',
+            unsafe_allow_html=True,
+        )
+        display_linked_file(resolved, show_filename_header=False)
 
 
 def render_filtered_preview(
     filtered_df: pd.DataFrame,
     file_col: str,
+    path_col: str,
+    use_path_column: bool,
     assets_path: Path | None,
     assets_dir_valid: bool,
 ) -> None:
-    """Aperçu tableau avec en-tête discret."""
+    """Aperçu tableau avec compteur fichiers trouvés / attendus."""
     st.markdown('<p class="pe-kicker">Aperçu du jeu filtré</p>', unsafe_allow_html=True)
     preview = filtered_df.copy()
     if assets_dir_valid and assets_path is not None and file_col in preview.columns:
-        cache: dict[str, bool] = {}
-        preview["_fichier_trouvé"] = preview[file_col].apply(
-            lambda v: preview_file_found(assets_path, v, cache=cache),
-        )
+
+        def _status(row: pd.Series) -> str:
+            pc = row[path_col] if use_path_column and path_col in row.index else None
+            found, total = preview_notice_files_count(
+                assets_path,
+                row[file_col],
+                pc,
+                use_path_column=use_path_column,
+            )
+            if total == 0:
+                return "—"
+            return f"{found}/{total}"
+
+        preview["_fichiers_trouvés"] = preview.apply(_status, axis=1)
     st.dataframe(preview, use_container_width=True, hide_index=False)

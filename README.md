@@ -2,12 +2,63 @@
 
 Application **locale** en Python / Streamlit : les lignes d’un **CSV** ou d’un **Excel (.xlsx)** deviennent des **fiches lisibles**, avec ouverture des **fichiers associés** (PDF, images, audio, vidéo, ou téléchargement) stockés dans un **dossier sur votre machine**. Aucun dépôt cloud ni base de données.
 
+## Utilisation simple (utilisateurs non techniques)
+
+L’idée : **installer Python une fois**, puis lancer l’outil avec un **script** fourni — pas besoin de connaître la ligne de commande au quotidien.
+
+### Python sur la machine (3.11 ou plus récent)
+
+Le programme **détecte** d’abord un Python **déjà installé** (`python` / `python3`, et sous Windows le lanceur **`py -3`**). S’il est en **3.11+**, il est utilisé pour créer le dossier `.venv` et lancer Streamlit.
+
+Si aucun Python adapté n’est trouvé, les lanceurs **`run.bat`** / **`run.sh`** cherchent un **Python embarqué** dans le dossier **`python/`** à côté de l’application (fourni par les installateurs après `prepare_embed_python`, voir `installer/README.md`).
+
+| Système | Sans dossier `python/` embarqué |
+|--------|----------------------------------|
+| **Windows** | [python.org/downloads](https://www.python.org/downloads/) — cochez **« Add python.exe to PATH »**. |
+| **macOS** | [python.org](https://www.python.org/downloads/) ou `brew install python`. |
+| **Linux** | Paquets `python3` et `python3-venv`. |
+
+Sans Python système **ni** copie embarquée, l’application ne peut pas démarrer.
+
+### Lancer le programme
+
+1. **Téléchargez ou clonez** ce dossier projet sur l’ordinateur (par ex. dézipper `PassionExcel` sur le Bureau).
+2. **Windows** : double-cliquez sur **`run.bat`**.  
+   - Si Windows demande une confirmation, autorisez l’exécution.  
+   - La première fois, le script crée un dossier `.venv`, installe les bibliothèques, puis ouvre le navigateur.
+3. **macOS / Linux** : ouvrez un terminal dans le dossier du projet, puis :
+   ```bash
+   chmod +x run.sh    # une seule fois, pour autoriser l’exécution
+   ./run.sh
+   ```
+   Vous pouvez aussi faire glisser `run.sh` dans une fenêtre Terminal pour l’exécuter.
+
+Pour **arrêter** l’application : fermez la fenêtre du terminal (Windows) ou faites **Ctrl+C** dans le terminal (Mac/Linux).
+
+### Ce qu’il faut transmettre aux collègues
+
+Envoyez-leur **tout le dossier du projet** (ou le dépôt GitHub en archive), pas seulement `app.py` : il leur faut `requirements.txt`, le dossier `passion_excel/`, et surtout **`run.bat`** / **`run.sh`**.
+
+### Limites réalistes pour un public « lambda »
+
+- Il faut **accepter d’installer Python** (comme pour beaucoup d’outils scientifiques). Embarquer Python dans un **seul** `.exe` « tout-en-un » est possible mais lourd pour Streamlit ; les scripts et installateurs ci-dessous restent l’approche pragmatique.
+- Les **mises à jour** du programme : remplacer le dossier ou faire `git pull` si vous utilisez Git.
+
+### Installateur Windows et paquet macOS (optionnel)
+
+Pour distribuer un **assistant d’installation** (raccourcis, dossier d’installation propre) sans que l’utilisateur dézippe le dépôt à la main :
+
+- Dossier **`installer/`** : script **Inno Setup** pour Windows (`.exe` généré) et script **`build_app.sh`** pour créer **`PassionExcel.app`** + **DMG** sur Mac.
+- Instructions détaillées : **[installer/README.md](installer/README.md)**.
+
+Ces installateurs **copient** l’application ; **Python reste à installer séparément** sur la machine cible.
+
 ## Prérequis
 
 - **Python 3.11** ou plus récent  
 - Fichiers tabulaires au format **CSV** ou **XLSX** (feuille au choix)
 
-## Installation
+## Installation (méthode manuelle, développeurs)
 
 À la racine du projet :
 
@@ -31,11 +82,15 @@ pip install -r requirements.txt
 
 ## Lancement
 
+**Méthode conseillée pour tout le monde** : `run.bat` (Windows) ou `./run.sh` (Mac/Linux), voir la section *Utilisation simple* ci-dessus.
+
+**Méthode manuelle** :
+
 ```bash
 streamlit run app.py
 ```
 
-Le navigateur s’ouvre sur l’application (outil pensé pour des collègues non informaticiens : barre latérale pour la configuration, zone centrale pour la notice et le document).
+Le navigateur s’ouvre sur l’application (barre latérale pour la configuration, zone centrale pour la notice et le document).
 
 ## Fichier d’exemple
 
@@ -56,6 +111,9 @@ La colonne **identifiant** n’est pas obligatoire : les notices sont distingué
 ```text
 PassionExcel/
 ├── app.py                 # Point d’entrée Streamlit
+├── run.bat                # Lancement simple sous Windows
+├── run.sh                 # Lancement simple sous macOS / Linux
+├── installer/             # Scripts Inno Setup (Windows) et .app / DMG (Mac)
 ├── passion_excel/         # Logique métier (sans UI)
 │   ├── __init__.py
 │   ├── loader.py          # Chargement CSV / XLSX

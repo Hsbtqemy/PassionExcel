@@ -22,6 +22,7 @@ from passion_excel.notice_helpers import (
     get_notice_position,
 )
 from passion_excel.search import row_matches_query
+from passion_excel.folder_picker import TkNotAvailableError, pick_folder, pick_table_file
 from passion_excel.ui_notice import (
     inject_notice_styles,
     render_document_panel,
@@ -67,6 +68,10 @@ st.set_page_config(
 
 if "selected_index" not in st.session_state:
     st.session_state.selected_index = None
+if "assets_dir" not in st.session_state:
+    st.session_state.assets_dir = ""
+if "table_path" not in st.session_state:
+    st.session_state.table_path = ""
 
 # ---------------------------------------------------------------------------
 # Interface — barre latérale (source, dossier, mapping, filtres)
@@ -96,7 +101,6 @@ with st.sidebar:
     )
 
     uploaded_file = None
-    table_path = ""
 
     if source_mode == "Téléverser un fichier":
         uploaded_file = st.file_uploader(
@@ -104,21 +108,62 @@ with st.sidebar:
             type=["csv", "xlsx"],
         )
     else:
-        table_path = st.text_input(
-            "Chemin complet du tableur",
+        if st.button(
+            "📄 Choisir le fichier sur cet ordinateur…",
+            key="btn_pick_table_file",
+            use_container_width=True,
+            help="Ouvre l’explorateur Windows / Finder pour sélectionner un CSV ou un Excel.",
+        ):
+            try:
+                chosen = pick_table_file("Choisir le tableur (CSV ou Excel)")
+                if chosen:
+                    st.session_state.table_path = chosen
+                    st.rerun()
+            except TkNotAvailableError as e:
+                st.warning(str(e))
+            except Exception as e:
+                st.warning(f"Impossible d’ouvrir le sélecteur de fichier : {e}")
+
+        st.text_input(
+            "Chemin du tableur (modifiable)",
+            key="table_path",
             placeholder=r"Ex. C:\Corpus\notices.xlsx",
+            help="Vous pouvez aussi coller un chemin ici si le bouton ci-dessus ne fonctionne pas (session distante, etc.).",
         )
 
     st.header("2. Dossier des documents liés")
-    assets_dir = st.text_input(
-        "Dossier racine contenant les fichiers",
+    if st.button(
+        "📁 Choisir le dossier des documents…",
+        key="btn_pick_assets_dir",
+        use_container_width=True,
+        help="Ouvre l’explorateur pour choisir le dossier racine du corpus (images, PDF, etc.).",
+    ):
+        try:
+            chosen = pick_folder("Dossier racine des documents liés")
+            if chosen:
+                st.session_state.assets_dir = chosen
+                st.rerun()
+        except TkNotAvailableError as e:
+            st.warning(str(e))
+        except Exception as e:
+            st.warning(f"Impossible d’ouvrir le sélecteur de dossier : {e}")
+
+    st.text_input(
+        "Dossier racine du corpus (modifiable)",
+        key="assets_dir",
         placeholder=r"Ex. C:\Corpus\documents",
-        help="Les noms dans le tableur sont cherchés d’abord à la racine, puis dans les sous-dossiers.",
+        help="Point de départ sur le disque. Les chemins du tableur sont relatifs à ce dossier.",
     )
 
     st.caption(
-        "Indiquez plutôt un **nom de fichier** dans le tableur (ex. `article.pdf`) qu’un chemin absolu."
+        "Les **fichiers** sont repérés par **nom** (une ou plusieurs entrées séparées par `;` ou retour à la ligne). "
+        "Optionnellement, une colonne **chemins** limite la recherche à certains sous-dossiers de cette racine."
     )
+
+    table_path = ""
+    if source_mode == "Chemin sur cet ordinateur":
+        table_path = str(st.session_state.get("table_path", "") or "")
+    assets_dir = str(st.session_state.get("assets_dir", "") or "")
 
 # ---------------------------------------------------------------------------
 # Chargement du tableur
@@ -180,13 +225,32 @@ with st.sidebar:
     title_col = st.selectbox("Titre de la notice", options=list(df.columns), index=0)
 
     default_file_idx = list(df.columns).index("file_name") if "file_name" in df.columns else min(1, len(df.columns) - 1)
-    file_col = st.selectbox("Nom du fichier lié", options=list(df.columns), index=default_file_idx)
+    file_col = st.selectbox(
+        "Noms des fichiers liés",
+        options=list(df.columns),
+        index=default_file_idx,
+        help="Cellule avec un ou plusieurs noms (ex. doc.pdf ; image.png). Séparateurs : ; | ou retour à la ligne.",
+    )
+
+    path_opts = ["(aucune)"] + list(df.columns)
+    path_idx = path_opts.index("path") if "path" in path_opts else 0
+    path_col = st.selectbox(
+        "Sous-dossiers sous la racine (optionnel)",
+        options=path_opts,
+        index=path_idx,
+        help="Colonne listant des chemins **relatifs** au dossier racine (ex. archives/2024). "
+        "Plusieurs dossiers : séparez par ; ou retour à la ligne. La recherche est **récursive** dans chacun.",
+    )
+    use_path_column = path_col != "(aucune)"
 
     optional = ["(aucune)"] + list(df.columns)
     summary_idx = optional.index("summary") if "summary" in optional else 0
     summary_col = st.selectbox("Résumé ou description", options=optional, index=summary_idx)
 
-    default_meta = [c for c in df.columns if c not in {title_col, file_col}]
+    excluded_for_meta = {title_col, file_col}
+    if use_path_column:
+        excluded_for_meta.add(path_col)
+    default_meta = [c for c in df.columns if c not in excluded_for_meta]
     meta_cols = st.multiselect(
         "Autres métadonnées à afficher",
         options=list(df.columns),
@@ -289,6 +353,8 @@ with col_right:
     render_document_panel(
         selected_row=selected_row,
         file_col=file_col,
+        path_col=path_col,
+        use_path_column=use_path_column,
         assets_dir=assets_dir,
         assets_path=assets_path,
         assets_dir_valid=assets_dir_valid,
@@ -302,11 +368,13 @@ with st.expander("Voir le tableau filtré (aperçu)", expanded=False):
     render_filtered_preview(
         filtered_df,
         file_col=file_col,
+        path_col=path_col,
+        use_path_column=use_path_column,
         assets_path=assets_path,
         assets_dir_valid=assets_dir_valid,
     )
 
 st.caption(
-    "Astuce : placez les fichiers sous le dossier racine ou dans des sous-dossiers ; "
-    "le programme cherche d’abord à la racine, puis par nom de fichier."
+    "Sans colonne « chemins », la recherche porte sur toute l’arborescence sous la racine. "
+    "Avec une colonne chemins, seuls les sous-dossiers indiqués sont parcourus (y compris leurs sous-dossiers)."
 )

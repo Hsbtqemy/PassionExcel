@@ -1,0 +1,4 @@
+# Scripts shell et lanceur macOS : fin de ligne LF
+*.sh text eol=lf
+installer/mac/PassionExcel text eol=lf
+installer/mac/build_app.sh text eol=lf

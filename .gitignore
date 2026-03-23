@@ -13,3 +13,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 *.zip
+installer/dist/
+installer/windows/embed/
+installer/mac/embed/
+/python/

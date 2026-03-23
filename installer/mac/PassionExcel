@@ -1,0 +1,41 @@
+#!/bin/bash
+# Lanceur macOS (PassionExcel.app) — préfère Python système 3.11+, sinon Python embarqué.
+set -e
+BIN="$(cd "$(dirname "$0")" && pwd)"
+RES="$(cd "$BIN/../Resources" && pwd)"
+APP="$RES/app"
+EMBED="$RES/python/bin/python3"
+cd "$APP"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+pick_python() {
+  for cmd in python3 python; do
+    if command -v "$cmd" &>/dev/null; then
+      if "$cmd" -c "import sys; sys.exit(0 if sys.version_info>=(3,11) else 1)" 2>/dev/null; then
+        echo "$cmd"
+        return 0
+      fi
+    fi
+  done
+  if [[ -x "$EMBED" ]] && "$EMBED" -c "import sys; sys.exit(0 if sys.version_info>=(3,11) else 1)" 2>/dev/null; then
+    echo "$EMBED"
+    return 0
+  fi
+  return 1
+}
+
+PY="$(pick_python || true)"
+if [[ -z "$PY" ]]; then
+  osascript <<OSA
+display dialog "Python 3.11 ou plus est requis. Installez Python depuis python.org ou utilisez une version de l’app avec Python embarqué (voir la documentation)." buttons {"OK"} default button 1 with title "Passion Excel"
+OSA
+  exit 1
+fi
+
+if [ ! -d .venv ]; then
+  "$PY" -m venv .venv
+fi
+# shellcheck source=/dev/null
+source ".venv/bin/activate"
+pip install -q -r requirements.txt
+exec python -m streamlit run app.py
