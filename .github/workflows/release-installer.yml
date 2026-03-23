@@ -1,0 +1,69 @@
+# Compile l’installateur Windows (Inno Setup) et publie le .exe en release GitHub pour les tags v*
+name: Release (installateur Windows)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Définir la version depuis le tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart('v')
+          if ($ver -notmatch '^\d+\.\d+(\.\d+)?') {
+            Write-Error "Le tag doit ressembler à vX.Y ou vX.Y.Z (ex. v0.2.0). Reçu : $tag"
+            exit 1
+          }
+          $path = "installer/windows/PassionExcel.iss"
+          $c = Get-Content $path -Raw -Encoding utf8
+          $c = $c -replace '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$ver`""
+          [System.IO.File]::WriteAllText((Resolve-Path $path), $c, [System.Text.UTF8Encoding]::new($false))
+          Write-Host "MyAppVersion = $ver"
+
+      - name: Installer Inno Setup 6
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Compiler l’installateur
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe introuvable après choco install innosetup." }
+          Write-Host "Utilisation de : $iscc"
+          & $iscc "$env:GITHUB_WORKSPACE\installer\windows\PassionExcel.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem "$env:GITHUB_WORKSPACE\installer\dist\*.exe" | ForEach-Object {
+            Write-Host "Sortie : $($_.Name) ($([math]::Round($_.Length/1MB, 2)) Mo)"
+          }
+
+      - name: Artefact (fichier .exe)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PassionExcel-Windows-Setup
+          path: installer/dist/*.exe
+
+      - name: Créer la release GitHub (binaire joint)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/dist/*.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

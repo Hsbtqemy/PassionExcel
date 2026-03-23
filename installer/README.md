@@ -48,6 +48,16 @@ Clone du dépôt : placez un Python embarqué **à la racine** dans `./python/` 
 
 ---
 
+## CI GitHub (installateur Windows)
+
+Le dépôt inclut **`.github/workflows/release-installer.yml`** :
+
+- **Déclenchement** : push d’un **tag** `v*` (ex. `v0.2.0`) ou exécution manuelle (**Actions → Release (installateur Windows) → Run workflow**).
+- **Runner** : `windows-latest`, **Chocolatey** installe **Inno Setup 6**, puis compilation de `PassionExcel.iss` (sans Python embarqué dans `embed/` sauf si vous adaptez le workflow).
+- Pour un **tag** `vX.Y.Z`, la version dans le `.iss` est **remplacée** automatiquement avant compilation ; une **release GitHub** est créée avec le **`.exe`** en pièce jointe.
+
+Le paquet **macOS** (`.app` / DMG) et le script **`run.sh`** ne sont pas produits par cette CI : le `.sh` est déjà versionné à la racine ; le build Mac reste à faire sur une machine macOS (voir section macOS ci-dessus).
+
 ## Désinstallation
 
 - Windows : le désinstalleur supprime aussi **`python`** et **`.venv`** sous le dossier d’installation.
