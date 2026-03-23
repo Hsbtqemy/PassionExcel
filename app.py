@@ -12,8 +12,8 @@ import pandas as pd
 import streamlit as st
 
 from passion_excel.loader import (
-    list_excel_sheets,
-    list_excel_sheets_from_path,
+    list_table_sheets,
+    list_table_sheets_from_path,
     load_table_from_path,
     load_table_from_upload,
 )
@@ -42,8 +42,8 @@ def _cached_load_upload(file_bytes: bytes, file_name: str, sheet_name: str | Non
 
 
 @st.cache_data(show_spinner=False)
-def _cached_list_sheets_upload(file_bytes: bytes) -> list[str]:
-    return list_excel_sheets(file_bytes)
+def _cached_list_sheets_upload(file_bytes: bytes, file_name: str) -> list[str]:
+    return list_table_sheets(file_bytes, file_name)
 
 
 @st.cache_data(show_spinner=False)
@@ -53,7 +53,12 @@ def _cached_load_path(table_path: str, sheet_name: str | None) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def _cached_list_sheets_path(table_path: str) -> list[str]:
-    return list_excel_sheets_from_path(table_path)
+    return list_table_sheets_from_path(table_path)
+
+
+def _table_file_needs_sheet_picker(lower_name: str) -> bool:
+    """Fichiers avec plusieurs feuilles (ou un seul tableau ODT à nommer)."""
+    return lower_name.endswith((".xlsx", ".ods", ".odt"))
 
 
 # ---------------------------------------------------------------------------
@@ -104,15 +109,16 @@ with st.sidebar:
 
     if source_mode == "Téléverser un fichier":
         uploaded_file = st.file_uploader(
-            "Choisir un CSV ou un fichier Excel (.xlsx)",
-            type=["csv", "xlsx"],
+            "Choisir un tableur (CSV, Excel, OpenDocument)",
+            type=["csv", "xlsx", "ods", "odt"],
+            help="Formats : CSV, Excel .xlsx, LibreOffice Calc .ods, texte LibreOffice Writer .odt (premier tableau du document).",
         )
     else:
         if st.button(
             "📄 Choisir le fichier sur cet ordinateur…",
             key="btn_pick_table_file",
             use_container_width=True,
-            help="Ouvre l’explorateur Windows / Finder pour sélectionner un CSV ou un Excel.",
+            help="Ouvre l’explorateur pour un fichier CSV, Excel, ODS ou ODT.",
         ):
             try:
                 chosen = pick_table_file("Choisir le tableur (CSV ou Excel)")
@@ -127,7 +133,7 @@ with st.sidebar:
         st.text_input(
             "Chemin du tableur (modifiable)",
             key="table_path",
-            placeholder=r"Ex. C:\Corpus\notices.xlsx",
+            placeholder=r"Ex. C:\Corpus\notices.ods",
             help="Vous pouvez aussi coller un chemin ici si le bouton ci-dessus ne fonctionne pas (session distante, etc.).",
         )
 
@@ -175,21 +181,26 @@ try:
 
     if source_mode == "Téléverser un fichier":
         if uploaded_file is None:
-            st.info("Chargez un fichier CSV ou Excel (.xlsx) pour commencer.")
+            st.info("Chargez un fichier tabulaire : CSV, Excel (.xlsx), Calc (.ods) ou Writer (.odt, premier tableau).")
             st.stop()
 
         file_bytes = uploaded_file.getvalue()
         lower_name = uploaded_file.name.lower()
 
-        if lower_name.endswith(".xlsx"):
-            sheets = _cached_list_sheets_upload(file_bytes)
-            sheet_name = st.sidebar.selectbox("Feuille Excel", sheets, key="sheet_upload")
+        if _table_file_needs_sheet_picker(lower_name):
+            sheets = _cached_list_sheets_upload(file_bytes, uploaded_file.name)
+            sheet_name = st.sidebar.selectbox(
+                "Feuille / tableau",
+                sheets,
+                key="sheet_upload",
+                help="Excel / Calc : choix de la feuille. ODT : le premier tableau du fichier est chargé (libellé indicatif).",
+            )
 
         df = _cached_load_upload(file_bytes, uploaded_file.name, sheet_name)
 
     else:
         if not table_path.strip():
-            st.info("Indiquez le chemin du fichier CSV ou Excel sur cet ordinateur.")
+            st.info("Indiquez le chemin d’un fichier CSV, Excel, ODS ou ODT sur cet ordinateur.")
             st.stop()
 
         path = Path(table_path.strip())
@@ -198,9 +209,15 @@ try:
             st.stop()
 
         lower_name = path.name.lower()
-        if lower_name.endswith(".xlsx"):
+        sheet_name = None
+        if _table_file_needs_sheet_picker(lower_name):
             sheets = _cached_list_sheets_path(table_path.strip())
-            sheet_name = st.sidebar.selectbox("Feuille Excel", sheets, key="sheet_path")
+            sheet_name = st.sidebar.selectbox(
+                "Feuille / tableau",
+                sheets,
+                key="sheet_path",
+                help="Excel / Calc : feuille à lire. ODT : premier tableau du document.",
+            )
 
         df = _cached_load_path(table_path.strip(), sheet_name)
 

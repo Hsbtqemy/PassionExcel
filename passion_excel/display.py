@@ -33,6 +33,18 @@ def display_linked_file(file_path: Path, *, show_filename_header: bool = True) -
         st.video(str(file_path))
         return
 
+    if suffix == ".odt":
+        mime_type = mime_type or "application/vnd.oasis.opendocument.text"
+        with open(file_path, "rb") as f:
+            st.download_button(
+                label="Télécharger le document ODT (LibreOffice)",
+                data=f.read(),
+                file_name=file_path.name,
+                mime=mime_type,
+                use_container_width=True,
+            )
+        return
+
     with open(file_path, "rb") as f:
         st.download_button(
             label="Télécharger le fichier",

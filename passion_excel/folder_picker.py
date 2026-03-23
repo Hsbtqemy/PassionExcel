@@ -59,9 +59,11 @@ def pick_table_file(title: str = "Choisir un tableur") -> str | None:
             master=root,
             title=title,
             filetypes=[
-                ("CSV ou Excel", "*.csv *.xlsx"),
+                ("Tableurs", "*.csv *.xlsx *.ods *.odt"),
                 ("CSV", "*.csv"),
                 ("Excel", "*.xlsx"),
+                ("LibreOffice Calc", "*.ods"),
+                ("LibreOffice Writer (tableau)", "*.odt"),
                 ("Tous les fichiers", "*.*"),
             ],
         )
