@@ -1,6 +1,6 @@
 # Consultation documentaire (MVP)
 
-Application **locale** en Python / Streamlit : les lignes d’un **CSV** ou d’un **Excel (.xlsx)** deviennent des **fiches lisibles**, avec ouverture des **fichiers associés** (PDF, images, audio, vidéo, ou téléchargement) stockés dans un **dossier sur votre machine**. Aucun dépôt cloud ni base de données.
+Application **locale** en Python / Streamlit : les lignes d’un **CSV** ou d’un **Excel (.xlsx)** deviennent des **fiches lisibles**, avec ouverture des **fichiers associés** (PDF, images, audio, vidéo, ou téléchargement) stockés dans un **dossier sur votre machine**. Pour une même notice, **PDF et images** peuvent s’afficher **l’un sous l’autre** (aperçu PDF puis galerie d’images avec sélecteur). Aucun dépôt cloud ni base de données.
 
 ## Utilisation simple (utilisateurs non techniques)
 
@@ -57,6 +57,7 @@ Ces installateurs **copient** l’application ; **Python reste à installer sép
 
 - **Python 3.11** ou plus récent  
 - Fichiers tabulaires : **CSV**, **Excel (.xlsx)**, **LibreOffice Calc (.ods)**, **Writer (.odt**, premier tableau du document) — pour ODS/ODT le paquet **odfpy** est requis (voir `requirements.txt`).
+- **Pillow** pour redimensionnement / vignettes des images (voir `requirements.txt`). Option **Pillow-SIMD** sous Linux : fichier séparé **`requirements-pillow-simd.txt`** (ne remplace pas `pillow` sous Windows / Python 3.12 sans build manuel).
 
 ## Installation (méthode manuelle, développeurs)
 
@@ -80,7 +81,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Après un **`git pull`** ou une mise à jour du dépôt, relancez **`pip install -r requirements.txt`** dans le même environnement virtuel pour récupérer les nouvelles dépendances (par ex. **odfpy** pour les fichiers OpenDocument).
+Après un **`git pull`** ou une mise à jour du dépôt, relancez **`pip install -r requirements.txt`** dans le même environnement virtuel pour récupérer les nouvelles dépendances.
 
 ## Lancement
 
@@ -116,27 +117,40 @@ PassionExcel/
 ├── run.bat                # Lancement simple sous Windows
 ├── run.sh                 # Lancement simple sous macOS / Linux
 ├── installer/             # Scripts Inno Setup (Windows) et .app / DMG (Mac)
-├── passion_excel/         # Logique métier (sans UI)
+├── passion_excel/
 │   ├── __init__.py
-│   ├── loader.py          # Chargement CSV / XLSX
-│   ├── files.py           # Résolution des chemins (racine puis sous-dossiers)
+│   ├── loader.py          # Chargement CSV / XLSX / ODS / ODT
+│   ├── files.py           # Résolution des chemins (racine, sous-dossiers, types média)
 │   ├── search.py          # Recherche textuelle littérale
 │   ├── notice_helpers.py  # Libellés et normalisation
-│   └── display.py         # Affichage des médias
+│   ├── display.py         # PDF (PyMuPDF), images, cache, galerie
+│   ├── ui_notice.py       # Fiche notice / panneau documents / styles
+│   └── folder_picker.py   # Dialogue fichier local (Tk, hors Streamlit Cloud)
 ├── examples/
 │   └── sample_notices.csv
 ├── requirements.txt
+├── requirements-pillow-simd.txt   # Optionnel (Pillow-SIMD, surtout Linux)
 └── README.md
 ```
 
 ## Choix techniques (bref)
 
-- **Streamlit** : interface web locale rapide à mettre en place, adaptée à un MVP de consultation.
+- **Streamlit** : interface web locale rapide à mettre en place, adaptée à un MVP de consultation ; **fragment** sur le panneau documents pour limiter les reruns inutiles.
 - **pandas** : lecture tabulaire unifiée (CSV / Excel) et filtrage.
 - **openpyxl** : moteur Excel pour `.xlsx` (standard avec pandas).
 - **Résolution des fichiers** : d’abord `dossier_racine / nom_indiqué`, puis recherche récursive par nom de fichier ; **aucun contenu** de document n’est lu tant qu’une notice n’est pas affichée (seuls les tests d’existence et l’affichage chargent les médias).
+- **PDF** : aperçu via **PyMuPDF** (raster JPEG) + lecteur `st.pdf` en secours ; cache des pages et pagination « charger plus ».
+- **Images** : **Pillow** (redimensionnement, vignettes, JPEG) ; `JPEG draft` et cache pour limiter le coût CPU.
 - **Recherche** : sous-chaîne **sans expression régulière** (`regex=False`) pour éviter les pièges pour les utilisateurs SHS.
 - **Sécurité minimale** : les chemins **absolus** dans le tableur sont ignorés pour le lien fichier ; seul le contenu sous le dossier racine est pris en compte.
+
+## Déploiement Streamlit Cloud (optionnel)
+
+Le dépôt peut être connecté à **[Streamlit Community Cloud](https://streamlit.io/cloud)** : fichier principal **`app.py`**, dépendances **`requirements.txt`**, Python **3.11+**. **Aucun secret** n’est requis par défaut. En revanche, l’app est conçue pour des **chemins locaux** et un **dossier médias** sur le disque : sur le cloud, seul le **téléversement** du tableur est vraiment adapté ; l’affichage des fichiers liés par chemin local ne fonctionne pas comme sur un poste de travail.
+
+## Installateur Windows (.exe)
+
+Voir **`installer/README.md`** : compilation avec **Inno Setup 6** et script **`installer/windows/build.bat`**. La version du paquet généré (`PassionExcel_Setup_0.x.x.exe`) suit **`#define MyAppVersion`** dans **`installer/windows/PassionExcel.iss`**.
 
 ## Feuille de route V1.1 (suggestions)
 

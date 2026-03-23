@@ -2,7 +2,7 @@
 ; Avant compilation : executer prepare_embed_python.ps1 pour inclure Python embarque (optionnel mais recommande).
 
 #define MyAppName "Passion Excel"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.2.0"
 #define MyAppPublisher "Passion Excel"
 #define MyAppURL "https://github.com/Hsbtqemy/PassionExcel"
 
@@ -33,6 +33,7 @@ Name: "desktopicon"; Description: "Créer un raccourci sur le Bureau"; GroupDesc
 [Files]
 Source: "..\..\app.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\requirements-pillow-simd.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\run.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\run.sh"; DestDir: "{app}"; Flags: ignoreversion
