@@ -404,7 +404,6 @@ with col_right:
         assets_path=assets_path,
         assets_dir_valid=assets_dir_valid,
         media_kind=media_kind,
-        selection_key=st.session_state.selected_index,
     )
 
 # ---------------------------------------------------------------------------

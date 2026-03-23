@@ -218,7 +218,6 @@ def render_document_panel(
     assets_path: Path | None,
     assets_dir_valid: bool,
     media_kind: str = "all",
-    selection_key: str | int | None = None,
 ) -> None:
     """Panneau droit : un ou plusieurs fichiers ; chemins relatifs optionnels sous la racine."""
     names = parse_file_names(selected_row.get(file_col))
@@ -291,8 +290,6 @@ def render_document_panel(
     kind_label = MEDIA_KIND_LABELS_FR.get(media_kind, media_kind)
     st.caption(f"Filtre de type actuel : **{kind_label}** (modifiable dans la barre latérale).")
 
-    sk = selection_key if selection_key is not None else 0
-
     for i, expected in enumerate(names):
         st.markdown(
             f"""
@@ -306,47 +303,44 @@ def render_document_panel(
             unsafe_allow_html=True,
         )
 
-        matches = collect_matching_paths(
-            assets_path,
-            expected,
-            path_subroots=path_subroots,
-            media_kind=media_kind,
-        )
-
-        resolved: Path | None = None
-        if len(matches) > 1:
-            opts = [str(p) for p in matches]
-            chosen = st.selectbox(
-                "Plusieurs fichiers correspondent — choisissez celui à prévisualiser :",
-                options=opts,
-                key=f"doc_disamb_{sk}_{i}",
-            )
-            resolved = Path(chosen)
-        elif len(matches) == 1:
-            resolved = matches[0]
-        elif media_kind != "all":
-            all_matches = collect_matching_paths(
+        matches = sorted(
+            collect_matching_paths(
                 assets_path,
                 expected,
                 path_subroots=path_subroots,
-                media_kind="all",
+                media_kind=media_kind,
+            ),
+            key=lambda p: str(p).lower(),
+        )
+
+        resolved: Path | None = None
+        if len(matches) >= 1:
+            resolved = matches[0]
+            if len(matches) > 1:
+                st.caption(
+                    f"{len(matches)} fichiers correspondent ; affichage automatique du premier (ordre alphabétique des chemins)."
+                )
+        elif media_kind != "all":
+            all_matches = sorted(
+                collect_matching_paths(
+                    assets_path,
+                    expected,
+                    path_subroots=path_subroots,
+                    media_kind="all",
+                ),
+                key=lambda p: str(p).lower(),
             )
-            if len(all_matches) > 1:
-                st.info(
-                    f"Aucun fichier ne correspond au filtre « {kind_label} », mais d’autres extensions existent."
-                )
-                opts = [str(p) for p in all_matches]
-                pick = st.selectbox(
-                    "Choisir un fichier (tous types) :",
-                    options=opts,
-                    key=f"doc_fallback_{sk}_{i}",
-                )
-                resolved = Path(pick)
-            elif len(all_matches) == 1:
-                st.success(
-                    f"Fichier trouvé en élargissant au type « Tous types » (filtre « {kind_label} » excluait cette extension)."
-                )
+            if len(all_matches) >= 1:
                 resolved = all_matches[0]
+                if len(all_matches) > 1:
+                    st.caption(
+                        f"Aucun fichier pour le filtre « {kind_label} » ; {len(all_matches)} fichier(s) en « Tous types » "
+                        "— affichage du premier."
+                    )
+                else:
+                    st.success(
+                        f"Fichier trouvé en élargissant au type « Tous types » (le filtre « {kind_label} » excluait cette extension)."
+                    )
 
         if resolved is None:
             exp_path = Path(expected)
@@ -364,8 +358,19 @@ def render_document_panel(
                     path_subroots=path_subroots,
                     media_kind="all",
                 )
+            if sugg:
+                sugg = sorted(sugg, key=lambda p: str(p).lower())
+                resolved = sugg[0]
+                if len(sugg) > 1:
+                    st.caption(
+                        f"{len(sugg)} fichiers dont le nom contient « {frag} » ; affichage automatique du premier."
+                    )
+                else:
+                    st.caption("Fichier détecté par correspondance partielle du nom.")
+
+        if resolved is None:
             st.markdown(
-                f"""
+                """
 <div class="pe-card pe-card--doc" style="border-color:#fecaca;background:#fef2f2;">
   <p class="pe-empty-hint" style="color:#991b1b;margin:0;">
     <strong>Introuvable</strong> pour ce nom dans les dossiers autorisés (avec le filtre actuel).
@@ -374,27 +379,10 @@ def render_document_panel(
                 """,
                 unsafe_allow_html=True,
             )
-            if sugg:
-                with st.expander("Suggestions : noms contenant « {} » (aperçu limité)".format(_esc(frag))):
-                    for sp in sugg:
-                        rel = str(sp)
-                        st.caption(rel)
-                        if sp.suffix.lower() in {
-                            ".png",
-                            ".jpg",
-                            ".jpeg",
-                            ".webp",
-                            ".gif",
-                            ".bmp",
-                            ".tif",
-                            ".tiff",
-                        }:
-                            st.image(sp, width=220)
-            else:
-                st.caption(
-                    "Vérifiez l’orthographe, l’extension, ou que le fichier est bien sous la racine "
-                    "(et dans les sous-dossiers indiqués si une colonne chemins est utilisée)."
-                )
+            st.caption(
+                "Vérifiez l’orthographe, l’extension, ou que le fichier est bien sous la racine "
+                "(et dans les sous-dossiers indiqués si une colonne chemins est utilisée)."
+            )
             continue
 
         st.markdown(

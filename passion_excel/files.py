@@ -202,6 +202,15 @@ def collect_matching_paths(
                 c2 = (base / rel.with_suffix(ext)).resolve()
                 if c2.is_file() and _is_under_root(c2, root_resolved):
                     matches.append(c2)
+                # Un seul segment (ex. CD-AE-01-001) : chercher ce nom de fichier dans toute l’arborescence
+                if len(rel.parts) == 1:
+                    leaf = f"{rel.stem}{ext}"
+                    for path in base.rglob(leaf):
+                        if path.is_file() and _is_under_root(path, root_resolved) and _suffix_matches_media(
+                            path.suffix,
+                            media_kind,
+                        ):
+                            matches.append(path)
 
     return _dedupe_sorted(matches, root_resolved)
 
