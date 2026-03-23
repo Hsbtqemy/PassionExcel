@@ -23,6 +23,7 @@ from passion_excel.notice_helpers import (
 )
 from passion_excel.search import row_matches_query
 from passion_excel.folder_picker import TkNotAvailableError, pick_folder, pick_table_file
+from passion_excel.files import media_kind_options
 from passion_excel.ui_notice import (
     inject_notice_styles,
     render_document_panel,
@@ -166,6 +167,18 @@ with st.sidebar:
         "Optionnellement, une colonne **chemins** limite la recherche à certains sous-dossiers de cette racine."
     )
 
+    st.subheader("Type de média attendu")
+    _media_labels, _media_keys = zip(*media_kind_options(), strict=True)
+    _label_for = dict(zip(_media_keys, _media_labels, strict=True))
+    media_kind = st.selectbox(
+        "Filtrer la recherche par extension",
+        options=list(_media_keys),
+        format_func=lambda k: _label_for[k],
+        key="media_kind_filter",
+        help="Affine les correspondances (ex. PDF uniquement). Si le tableur n’indique pas l’extension, "
+        "des variantes typiques du type choisi sont essayées.",
+    )
+
     table_path = ""
     if source_mode == "Chemin sur cet ordinateur":
         table_path = str(st.session_state.get("table_path", "") or "")
@@ -222,7 +235,22 @@ try:
         df = _cached_load_path(table_path.strip(), sheet_name)
 
 except Exception as exc:
-    st.error(f"Impossible de lire le tableur : {exc}")
+    err = str(exc).lower()
+    if "odfpy" in err:
+        st.error(
+            "Les fichiers **.ods** et **.odt** nécessitent le paquet **odfpy**, souvent absent si les dépendances "
+            "n’ont pas été réinstallées.\n\n"
+            "Dans le même environnement Python que Streamlit, exécutez :\n\n"
+            "`pip install odfpy`  ou  `pip install -r requirements.txt`\n\n"
+            "Puis relancez l’application."
+        )
+    elif "openpyxl" in err:
+        st.error(
+            "Les fichiers **.xlsx** nécessitent **openpyxl**. Exécutez : `pip install openpyxl` "
+            "ou `pip install -r requirements.txt`, puis relancez."
+        )
+    else:
+        st.error(f"Impossible de lire le tableur : {exc}")
     st.stop()
 
 if df is None or df.empty:
@@ -375,6 +403,8 @@ with col_right:
         assets_dir=assets_dir,
         assets_path=assets_path,
         assets_dir_valid=assets_dir_valid,
+        media_kind=media_kind,
+        selection_key=st.session_state.selected_index,
     )
 
 # ---------------------------------------------------------------------------
@@ -389,6 +419,7 @@ with st.expander("Voir le tableau filtré (aperçu)", expanded=False):
         use_path_column=use_path_column,
         assets_path=assets_path,
         assets_dir_valid=assets_dir_valid,
+        media_kind=media_kind,
     )
 
 st.caption(

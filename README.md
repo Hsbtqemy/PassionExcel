@@ -56,7 +56,7 @@ Ces installateurs **copient** l’application ; **Python reste à installer sép
 ## Prérequis
 
 - **Python 3.11** ou plus récent  
-- Fichiers tabulaires au format **CSV** ou **XLSX** (feuille au choix)
+- Fichiers tabulaires : **CSV**, **Excel (.xlsx)**, **LibreOffice Calc (.ods)**, **Writer (.odt**, premier tableau du document) — pour ODS/ODT le paquet **odfpy** est requis (voir `requirements.txt`).
 
 ## Installation (méthode manuelle, développeurs)
 
@@ -79,6 +79,8 @@ pip install -r requirements.txt
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+Après un **`git pull`** ou une mise à jour du dépôt, relancez **`pip install -r requirements.txt`** dans le même environnement virtuel pour récupérer les nouvelles dépendances (par ex. **odfpy** pour les fichiers OpenDocument).
 
 ## Lancement
 

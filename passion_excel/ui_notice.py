@@ -10,11 +10,13 @@ import streamlit as st
 
 from passion_excel.display import display_linked_file
 from passion_excel.files import (
+    MEDIA_KIND_LABELS_FR,
+    collect_matching_paths,
     has_valid_path_roots,
     parse_file_names,
     parse_path_roots,
     preview_notice_files_count,
-    resolve_linked_file,
+    suggest_paths_by_name_fragment,
 )
 from passion_excel.notice_helpers import normalize_value
 
@@ -215,6 +217,8 @@ def render_document_panel(
     assets_dir: str,
     assets_path: Path | None,
     assets_dir_valid: bool,
+    media_kind: str = "all",
+    selection_key: str | int | None = None,
 ) -> None:
     """Panneau droit : un ou plusieurs fichiers ; chemins relatifs optionnels sous la racine."""
     names = parse_file_names(selected_row.get(file_col))
@@ -284,6 +288,11 @@ def render_document_panel(
         else:
             st.caption("Aucun sous-dossier imposé : recherche sur **toute** l’arborescence sous la racine.")
 
+    kind_label = MEDIA_KIND_LABELS_FR.get(media_kind, media_kind)
+    st.caption(f"Filtre de type actuel : **{kind_label}** (modifiable dans la barre latérale).")
+
+    sk = selection_key if selection_key is not None else 0
+
     for i, expected in enumerate(names):
         st.markdown(
             f"""
@@ -297,24 +306,99 @@ def render_document_panel(
             unsafe_allow_html=True,
         )
 
-        resolved = resolve_linked_file(assets_path, expected, path_subroots=path_subroots)
+        matches = collect_matching_paths(
+            assets_path,
+            expected,
+            path_subroots=path_subroots,
+            media_kind=media_kind,
+        )
+
+        resolved: Path | None = None
+        if len(matches) > 1:
+            opts = [str(p) for p in matches]
+            chosen = st.selectbox(
+                "Plusieurs fichiers correspondent — choisissez celui à prévisualiser :",
+                options=opts,
+                key=f"doc_disamb_{sk}_{i}",
+            )
+            resolved = Path(chosen)
+        elif len(matches) == 1:
+            resolved = matches[0]
+        elif media_kind != "all":
+            all_matches = collect_matching_paths(
+                assets_path,
+                expected,
+                path_subroots=path_subroots,
+                media_kind="all",
+            )
+            if len(all_matches) > 1:
+                st.info(
+                    f"Aucun fichier ne correspond au filtre « {kind_label} », mais d’autres extensions existent."
+                )
+                opts = [str(p) for p in all_matches]
+                pick = st.selectbox(
+                    "Choisir un fichier (tous types) :",
+                    options=opts,
+                    key=f"doc_fallback_{sk}_{i}",
+                )
+                resolved = Path(pick)
+            elif len(all_matches) == 1:
+                st.success(
+                    f"Fichier trouvé en élargissant au type « Tous types » (filtre « {kind_label} » excluait cette extension)."
+                )
+                resolved = all_matches[0]
 
         if resolved is None:
+            exp_path = Path(expected)
+            frag = exp_path.stem if len(exp_path.stem) >= 2 else exp_path.name
+            sugg = suggest_paths_by_name_fragment(
+                assets_path,
+                frag,
+                path_subroots=path_subroots,
+                media_kind=media_kind,
+            )
+            if not sugg and media_kind != "all":
+                sugg = suggest_paths_by_name_fragment(
+                    assets_path,
+                    frag,
+                    path_subroots=path_subroots,
+                    media_kind="all",
+                )
             st.markdown(
-                """
+                f"""
 <div class="pe-card pe-card--doc" style="border-color:#fecaca;background:#fef2f2;">
   <p class="pe-empty-hint" style="color:#991b1b;margin:0;">
-    <strong>Introuvable.</strong> Pas de correspondance dans les dossiers autorisés
-    (y compris sous-dossiers internes), pour ce nom.
+    <strong>Introuvable</strong> pour ce nom dans les dossiers autorisés (avec le filtre actuel).
   </p>
 </div>
                 """,
                 unsafe_allow_html=True,
             )
+            if sugg:
+                with st.expander("Suggestions : noms contenant « {} » (aperçu limité)".format(_esc(frag))):
+                    for sp in sugg:
+                        rel = str(sp)
+                        st.caption(rel)
+                        if sp.suffix.lower() in {
+                            ".png",
+                            ".jpg",
+                            ".jpeg",
+                            ".webp",
+                            ".gif",
+                            ".bmp",
+                            ".tif",
+                            ".tiff",
+                        }:
+                            st.image(sp, width=220)
+            else:
+                st.caption(
+                    "Vérifiez l’orthographe, l’extension, ou que le fichier est bien sous la racine "
+                    "(et dans les sous-dossiers indiqués si une colonne chemins est utilisée)."
+                )
             continue
 
         st.markdown(
-            f'<p class="pe-doc-path">{_esc(str(resolved))}</p>',
+            f'<p class="pe-doc-path">Chemin résolu : {_esc(str(resolved))}</p>',
             unsafe_allow_html=True,
         )
         display_linked_file(resolved, show_filename_header=False)
@@ -327,6 +411,7 @@ def render_filtered_preview(
     use_path_column: bool,
     assets_path: Path | None,
     assets_dir_valid: bool,
+    media_kind: str = "all",
 ) -> None:
     """Aperçu tableau avec compteur fichiers trouvés / attendus."""
     st.markdown('<p class="pe-kicker">Aperçu du jeu filtré</p>', unsafe_allow_html=True)
@@ -340,6 +425,7 @@ def render_filtered_preview(
                 row[file_col],
                 pc,
                 use_path_column=use_path_column,
+                media_kind=media_kind,
             )
             if total == 0:
                 return "—"

@@ -1,4 +1,4 @@
-"""Résolution des chemins vers les fichiers liés (racine, dossiers ciblés, sous-arborescences)."""
+"""Résolution des chemins vers les fichiers liés (racine, dossiers ciblés, type de média)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,48 @@ import re
 from pathlib import Path
 
 import pandas as pd
+
+# Extensions par catégorie (filtrage de la recherche)
+EXT_BY_KIND: dict[str, frozenset[str] | None] = {
+    "all": None,
+    "image": frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}),
+    "pdf": frozenset({".pdf"}),
+    "audio": frozenset({".mp3", ".wav", ".m4a", ".ogg", ".flac"}),
+    "video": frozenset({".mp4", ".mov", ".webm", ".mkv"}),
+    "office": frozenset({".odt", ".ods", ".docx", ".xlsx", ".doc", ".ppt", ".pptx", ".rtf", ".pdf"}),
+    "other": None,
+}
+
+_UNION_TYPED = frozenset().union(
+    *(EXT_BY_KIND[k] for k in ("image", "pdf", "audio", "video", "office") if EXT_BY_KIND[k]),
+)
+
+# Extensions essayées si le tableur ne donne pas de suffixe (selon le type choisi)
+STEM_FALLBACK_BY_KIND: dict[str, tuple[str, ...]] = {
+    "all": (".pdf", ".png", ".jpg", ".jpeg", ".odt", ".ods", ".docx", ".xlsx", ".mp3", ".mp4"),
+    "image": (".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff", ".bmp"),
+    "pdf": (".pdf",),
+    "audio": (".mp3", ".wav", ".m4a", ".ogg", ".flac"),
+    "video": (".mp4", ".mov", ".webm", ".mkv"),
+    "office": (".pdf", ".odt", ".ods", ".docx", ".xlsx", ".doc", ".ppt", ".pptx"),
+    "other": (".txt", ".zip", ".7z", ".csv", ".xml", ".json"),
+}
+
+MEDIA_KIND_LABELS_FR: dict[str, str] = {
+    "all": "Tous types",
+    "image": "Images",
+    "pdf": "PDF",
+    "audio": "Audio",
+    "video": "Vidéo",
+    "office": "Bureautique (Office, ODF…)",
+    "other": "Autres extensions",
+}
+
+
+def media_kind_options() -> list[tuple[str, str]]:
+    """Paires (libellé FR, clé) pour un selectbox."""
+    order = ("all", "image", "pdf", "audio", "video", "office", "other")
+    return [(MEDIA_KIND_LABELS_FR[k], k) for k in order]
 
 
 def _is_na(value: object) -> bool:
@@ -73,14 +115,6 @@ def _safe_subpath(root_resolved: Path, rel: str) -> Path | None:
 
 
 def _search_bases(root_resolved: Path, path_subroots: list[str] | None) -> list[Path] | None:
-    """Bases de recherche : sous-dossiers donnés ou la racine seule.
-
-    - ``path_subroots is None`` : colonne « chemins » non utilisée → recherche sous toute la racine.
-    - ``path_subroots == []`` : cellule vide → idem, toute la racine.
-    - ``path_subroots == ["a","b"]`` : uniquement sous ``racine/a`` et ``racine/b`` (récursif par nom).
-
-    Retourne ``None`` si des chemins étaient listés mais aucun dossier valide sous la racine.
-    """
     if path_subroots is None or not path_subroots:
         return [root_resolved]
     bases: list[Path] = []
@@ -93,49 +127,141 @@ def _search_bases(root_resolved: Path, path_subroots: list[str] | None) -> list[
     return bases
 
 
+def _suffix_matches_media(suffix: str, media_kind: str) -> bool:
+    s = suffix.lower()
+    if media_kind == "all":
+        return True
+    if media_kind == "other":
+        return bool(s) and s not in _UNION_TYPED
+    exts = EXT_BY_KIND.get(media_kind)
+    if exts is None:
+        return True
+    return s in exts
+
+
+def _dedupe_sorted(paths: list[Path], root_resolved: Path) -> list[Path]:
+    seen: set[str] = set()
+    out: list[Path] = []
+    for p in sorted(paths, key=lambda x: str(x).lower()):
+        key = str(p.resolve())
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return [p for p in out if _is_under_root(p, root_resolved)]
+
+
+def collect_matching_paths(
+    root_dir: str | Path,
+    file_name: str,
+    *,
+    path_subroots: list[str] | None = None,
+    media_kind: str = "all",
+) -> list[Path]:
+    """Tous les chemins valides correspondant au nom / au type (pour désambiguïsation ou suggestions)."""
+    root = Path(root_dir).expanduser()
+    if not root.exists() or not root.is_dir():
+        return []
+
+    raw = (file_name or "").strip()
+    if not raw:
+        return []
+
+    rel = Path(raw)
+    if rel.is_absolute():
+        return []
+
+    root_resolved = root.resolve()
+    bases = _search_bases(root_resolved, path_subroots)
+    if bases is None:
+        return []
+
+    matches: list[Path] = []
+    base_name = rel.name
+    stem_fallback_exts = STEM_FALLBACK_BY_KIND.get(media_kind, STEM_FALLBACK_BY_KIND["all"])
+
+    for base in bases:
+        candidate = (base / rel).resolve()
+        if candidate.is_file() and _is_under_root(candidate, root_resolved) and _suffix_matches_media(
+            candidate.suffix,
+            media_kind,
+        ):
+            matches.append(candidate)
+
+        for path in base.rglob(base_name):
+            if path.is_file() and _is_under_root(path, root_resolved) and _suffix_matches_media(
+                path.suffix,
+                media_kind,
+            ):
+                matches.append(path)
+
+        # Nom sans extension dans le tableur : essayer stem + extensions du type choisi
+        if not rel.suffix and rel.name:
+            for ext in stem_fallback_exts:
+                if not _suffix_matches_media(ext, media_kind):
+                    continue
+                c2 = (base / rel.with_suffix(ext)).resolve()
+                if c2.is_file() and _is_under_root(c2, root_resolved):
+                    matches.append(c2)
+
+    return _dedupe_sorted(matches, root_resolved)
+
+
 def resolve_linked_file(
     root_dir: str | Path,
     file_name: str,
     *,
     path_subroots: list[str] | None = None,
+    media_kind: str = "all",
 ) -> Path | None:
-    """Retrouve un fichier sous la racine des ressources.
+    """Retourne le premier fichier trouvé (liste triée). Pour plusieurs correspondances, utiliser l’UI de choix."""
+    paths = collect_matching_paths(root_dir, file_name, path_subroots=path_subroots, media_kind=media_kind)
+    return paths[0] if paths else None
 
-    - ``file_name`` : nom simple ou chemin relatif (ex. ``doc.pdf`` ou ``sous/dossier/doc.pdf``).
-    - ``path_subroots`` : si fourni et non vide, limite la recherche à ces dossiers (relatifs à la racine),
-      chacun étant parcouru **récursivement** pour un fichier du même nom de base.
-      Si ``None`` ou liste vide, comportement global : d’abord ``racine / chemin_du_fichier``, puis ``rglob``
-      sur toute l’arborescence sous la racine.
-    """
+
+def resolve_linked_file_relaxed(
+    root_dir: str | Path,
+    file_name: str,
+    *,
+    path_subroots: list[str] | None = None,
+) -> Path | None:
+    """Comme resolve sans filtre de type (pour message d’aide si le filtre masque un fichier existant)."""
+    return resolve_linked_file(root_dir, file_name, path_subroots=path_subroots, media_kind="all")
+
+
+def suggest_paths_by_name_fragment(
+    root_dir: str | Path,
+    fragment: str,
+    *,
+    path_subroots: list[str] | None = None,
+    media_kind: str = "all",
+    max_results: int = 24,
+    max_scanned: int = 12000,
+) -> list[Path]:
+    """Fichiers dont le nom contient la chaîne (recherche limitée pour rester réactive)."""
     root = Path(root_dir).expanduser()
-    if not root.exists() or not root.is_dir():
-        return None
-
-    raw = (file_name or "").strip()
-    if not raw:
-        return None
-
-    rel = Path(raw)
-    if rel.is_absolute():
-        return None
-
+    if not root.is_dir() or not fragment.strip():
+        return []
     root_resolved = root.resolve()
     bases = _search_bases(root_resolved, path_subroots)
     if bases is None:
-        return None
-
-    base_name = rel.name
-
+        return []
+    frag = fragment.strip().lower()
+    out: list[Path] = []
+    scanned = 0
     for base in bases:
-        candidate = (base / rel).resolve()
-        if _is_under_root(candidate, root_resolved) and candidate.is_file():
-            return candidate
-
-        for path in base.rglob(base_name):
-            if path.is_file() and _is_under_root(path, root_resolved):
-                return path
-
-    return None
+        for p in base.rglob("*"):
+            scanned += 1
+            if scanned > max_scanned:
+                return _dedupe_sorted(out, root_resolved)[:max_results]
+            if not p.is_file() or not _is_under_root(p, root_resolved):
+                continue
+            if frag not in p.name.lower():
+                continue
+            if _suffix_matches_media(p.suffix, media_kind):
+                out.append(p)
+                if len(out) >= max_results:
+                    return _dedupe_sorted(out, root_resolved)
+    return _dedupe_sorted(out, root_resolved)
 
 
 def _is_under_root(path: Path, root_resolved: Path) -> bool:
@@ -163,6 +289,7 @@ def preview_notice_files_count(
     path_cell: object | None,
     *,
     use_path_column: bool,
+    media_kind: str = "all",
 ) -> tuple[int, int]:
     """Compte (trouvés, total) pour l’aperçu tableau."""
     names = parse_file_names(file_cell)
@@ -174,7 +301,7 @@ def preview_notice_files_count(
         ps = None
     found = 0
     for fn in names:
-        if resolve_linked_file(root_dir, fn, path_subroots=ps) is not None:
+        if resolve_linked_file(root_dir, fn, path_subroots=ps, media_kind=media_kind) is not None:
             found += 1
     return found, len(names)
 
