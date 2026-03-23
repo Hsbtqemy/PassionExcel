@@ -1,0 +1,304 @@
+"""Présentation type « fiche notice » : styles et blocs HTML pour une lecture confortable."""
+
+from __future__ import annotations
+
+import html
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+from passion_excel.display import display_linked_file
+from passion_excel.files import preview_file_found, resolve_linked_file
+from passion_excel.notice_helpers import normalize_value
+
+
+def _esc(s: str) -> str:
+    return html.escape(s, quote=True)
+
+
+def _format_prose(text: str) -> str:
+    """Préserve les retours à la ligne pour un bloc de lecture."""
+    if not text.strip():
+        return ""
+    # Échapper puis convertir les sauts de ligne en <br>
+    parts = text.splitlines()
+    return "<br>".join(_esc(p) if p else "&nbsp;" for p in parts)
+
+
+def inject_notice_styles() -> None:
+    """Feuille de style globale pour l’app (cartes, typographie, grilles)."""
+    st.markdown(
+        """
+<style>
+  /* Cartes et hiérarchie */
+  .pe-notice-shell {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #1c1917;
+  }
+  .pe-card {
+    background: linear-gradient(180deg, #fafaf9 0%, #f5f5f4 100%);
+    border: 1px solid #e7e5e4;
+    border-radius: 14px;
+    padding: 1.5rem 1.75rem 1.75rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    margin-bottom: 0.5rem;
+  }
+  .pe-card--doc {
+    background: #fafafa;
+    min-height: 120px;
+  }
+  .pe-kicker {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #78716c;
+    margin: 0 0 0.35rem 0;
+  }
+  .pe-notice-title {
+    font-size: 1.65rem;
+    font-weight: 650;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    color: #0c0a09;
+    margin: 0 0 1rem 0;
+    border-bottom: 1px solid #e7e5e4;
+    padding-bottom: 0.85rem;
+  }
+  .pe-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #57534e;
+    margin: 1.25rem 0 0.5rem 0;
+  }
+  .pe-section-title:first-of-type {
+    margin-top: 0.25rem;
+  }
+  .pe-prose {
+    font-size: 1.02rem;
+    line-height: 1.65;
+    color: #292524;
+    max-width: 52rem;
+  }
+  .pe-meta-grid {
+    display: grid;
+    grid-template-columns: minmax(7rem, 32%) 1fr;
+    gap: 0.35rem 1rem;
+    align-items: baseline;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-top: 0.35rem;
+  }
+  @media (max-width: 640px) {
+    .pe-meta-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .pe-meta-k {
+    color: #78716c;
+    font-weight: 500;
+    font-size: 0.82rem;
+  }
+  .pe-meta-v {
+    color: #1c1917;
+    word-break: break-word;
+  }
+  .pe-nav-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    background: #f5f5f4;
+    border: 1px solid #e7e5e4;
+    border-radius: 12px;
+    padding: 0.65rem 1rem;
+    margin-bottom: 1.1rem;
+  }
+  .pe-nav-badge {
+    margin-left: auto;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #44403c;
+    background: #fff;
+    border: 1px solid #d6d3d1;
+    border-radius: 999px;
+    padding: 0.25rem 0.75rem;
+  }
+  .pe-doc-path {
+    font-size: 0.78rem;
+    color: #78716c;
+    word-break: break-all;
+    margin-top: 0.35rem;
+  }
+  .pe-empty-hint {
+    font-size: 0.95rem;
+    color: #57534e;
+    line-height: 1.55;
+  }
+</style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_navigation_strip(position: int, total: int) -> None:
+    """Bandeau visuel au-dessus du contenu (complète les boutons Streamlit)."""
+    st.markdown(
+        f"""
+<div class="pe-notice-shell">
+  <div class="pe-nav-strip">
+    <span class="pe-kicker" style="margin:0;">Navigation</span>
+    <span class="pe-nav-badge">Notice {position} sur {total}</span>
+  </div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_notice_fiche(
+    *,
+    selected_row: pd.Series,
+    df_columns: list[str],
+    title_col: str,
+    summary_col: str,
+    meta_cols: list[str],
+) -> None:
+    """Bloc principal : titre, résumé, métadonnées en grille, repliable données brutes."""
+    titre = normalize_value(selected_row.get(title_col, "")).strip() or "Sans titre"
+
+    parts: list[str] = [
+        '<div class="pe-notice-shell">',
+        '<article class="pe-card" aria-label="Notice">',
+        '<p class="pe-kicker">Fiche documentaire</p>',
+        f'<h1 class="pe-notice-title">{_esc(titre)}</h1>',
+    ]
+
+    if summary_col != "(aucune)":
+        resume = normalize_value(selected_row.get(summary_col, "")).strip()
+        if resume:
+            parts.append('<h2 class="pe-section-title">Résumé</h2>')
+            parts.append(f'<div class="pe-prose">{_format_prose(resume)}</div>')
+
+    if meta_cols:
+        parts.append('<h2 class="pe-section-title">Informations</h2>')
+        parts.append('<div class="pe-meta-grid">')
+        for col in meta_cols:
+            val = normalize_value(selected_row.get(col, "")).strip()
+            parts.append(f'<div class="pe-meta-k">{_esc(str(col))}</div>')
+            parts.append(f'<div class="pe-meta-v">{_esc(val) if val else "—"}</div>')
+        parts.append("</div>")
+
+    parts.append("</article></div>")
+
+    st.markdown("".join(parts), unsafe_allow_html=True)
+
+    with st.expander("Données brutes (toutes les colonnes du tableur)"):
+        st.json({c: normalize_value(selected_row[c]) for c in df_columns})
+
+
+def render_document_panel(
+    *,
+    selected_row: pd.Series,
+    file_col: str,
+    assets_dir: str,
+    assets_path: Path | None,
+    assets_dir_valid: bool,
+) -> None:
+    """Panneau droit : état du lien fichier + prévisualisation ou message clair."""
+    expected = normalize_value(selected_row.get(file_col, "")).strip()
+
+    st.markdown(
+        """
+<div class="pe-notice-shell">
+  <p class="pe-kicker" style="margin-bottom:0.5rem;">Document associé</p>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if not expected:
+        st.markdown(
+            '<div class="pe-card pe-card--doc"><p class="pe-empty-hint">'
+            "Aucun fichier n’est indiqué pour cette notice dans la colonne choisie."
+            "</p></div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    if not assets_dir.strip():
+        st.markdown(
+            '<div class="pe-card pe-card--doc"><p class="pe-empty-hint">'
+            "Indiquez le <strong>dossier racine</strong> des documents dans la barre latérale "
+            "pour afficher le fichier.</p></div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    if not assets_dir_valid or assets_path is None:
+        st.markdown(
+            '<div class="pe-card pe-card--doc"><p class="pe-empty-hint">'
+            "Le dossier indiqué est introuvable ou inaccessible. Vérifiez le chemin "
+            "(lecteur, réseau, droits de lecture).</p></div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    resolved = resolve_linked_file(assets_path, expected)
+
+    st.markdown(
+        f"""
+<div class="pe-notice-shell">
+  <div class="pe-card pe-card--doc">
+    <p class="pe-kicker" style="margin-bottom:0.35rem;">Fichier attendu</p>
+    <p style="margin:0;font-size:1rem;font-weight:600;color:#1c1917;">{_esc(expected)}</p>
+  </div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if resolved is None:
+        st.markdown(
+            """
+<div class="pe-card pe-card--doc" style="border-color:#fecaca;background:#fef2f2;">
+  <p class="pe-empty-hint" style="color:#991b1b;margin:0;">
+    <strong>Document introuvable.</strong>
+    Il n’a pas été retrouvé sous le dossier indiqué
+    (ni à la racine, ni dans les sous-dossiers avec ce nom).
+  </p>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
+    st.markdown(
+        f"""
+<div class="pe-notice-shell">
+  <p class="pe-doc-path">{_esc(str(resolved))}</p>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    display_linked_file(resolved, show_filename_header=False)
+
+
+def render_filtered_preview(
+    filtered_df: pd.DataFrame,
+    file_col: str,
+    assets_path: Path | None,
+    assets_dir_valid: bool,
+) -> None:
+    """Aperçu tableau avec en-tête discret."""
+    st.markdown('<p class="pe-kicker">Aperçu du jeu filtré</p>', unsafe_allow_html=True)
+    preview = filtered_df.copy()
+    if assets_dir_valid and assets_path is not None and file_col in preview.columns:
+        cache: dict[str, bool] = {}
+        preview["_fichier_trouvé"] = preview[file_col].apply(
+            lambda v: preview_file_found(assets_path, v, cache=cache),
+        )
+    st.dataframe(preview, use_container_width=True, hide_index=False)
