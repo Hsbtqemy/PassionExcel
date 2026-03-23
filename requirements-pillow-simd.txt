@@ -1,0 +1,18 @@
+# ---------------------------------------------------------------------------
+# Optionnel : Pillow-SIMD (fork Uploadcare, redimensionnements accélérés SIMD)
+# ---------------------------------------------------------------------------
+# Remplace le paquet « pillow » (le module importé reste « PIL »).
+#
+# Installation typique (Linux x86_64, Python 3.10 ou 3.11 recommandés) :
+#   pip install -r requirements.txt
+#   pip uninstall pillow -y
+#   pip install -r requirements-pillow-simd.txt
+#
+# Windows / Python 3.12 : pas de roue binaire PyPI pour Pillow-SIMD ; la
+# compilation depuis les sources échoue souvent (zlib, toolchain). Garder
+# « pillow » depuis requirements.txt dans ce cas.
+#
+# Détails : https://github.com/uploadcare/pillow-simd
+# ---------------------------------------------------------------------------
+
+Pillow-SIMD==9.5.0.post2

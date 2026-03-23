@@ -5,7 +5,17 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+try:
+    from glob import escape as glob_escape
+except ImportError:
+
+    def glob_escape(s: str) -> str:
+        return "".join(("[" + c + "]" if c in "*?[]" else c) for c in s)
+
 import pandas as pd
+
+# Variantes de nom « base » + suffixe (ex. CD-AE-01-001_001.jpg pour CD-AE-01-001 dans le tableur)
+_IMAGE_EXT_PREFIX_GLOB = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"})
 
 # Extensions par catégorie (filtrage de la recherche)
 EXT_BY_KIND: dict[str, frozenset[str] | None] = {
@@ -24,7 +34,8 @@ _UNION_TYPED = frozenset().union(
 
 # Extensions essayées si le tableur ne donne pas de suffixe (selon le type choisi)
 STEM_FALLBACK_BY_KIND: dict[str, tuple[str, ...]] = {
-    "all": (".pdf", ".png", ".jpg", ".jpeg", ".odt", ".ods", ".docx", ".xlsx", ".mp3", ".mp4"),
+    # Images avant PDF : en cas d’homonymes (même stem), on préfère l’aperçu image
+    "all": (".png", ".jpg", ".jpeg", ".webp", ".pdf", ".odt", ".ods", ".docx", ".xlsx", ".mp3", ".mp4"),
     "image": (".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff", ".bmp"),
     "pdf": (".pdf",),
     "audio": (".mp3", ".wav", ".m4a", ".ogg", ".flac"),
@@ -48,6 +59,21 @@ def media_kind_options() -> list[tuple[str, str]]:
     """Paires (libellé FR, clé) pour un selectbox."""
     order = ("all", "image", "pdf", "audio", "video", "office", "other")
     return [(MEDIA_KIND_LABELS_FR[k], k) for k in order]
+
+
+def split_matches_pdf_images(matches: list[Path]) -> tuple[list[Path], list[Path]]:
+    """Sépare les chemins PDF et images (ordre d’entrée conservé). Les autres extensions sont ignorées."""
+    img_ext = EXT_BY_KIND["image"]
+    assert img_ext is not None
+    pdfs: list[Path] = []
+    images: list[Path] = []
+    for p in matches:
+        s = p.suffix.lower()
+        if s == ".pdf":
+            pdfs.append(p)
+        elif s in img_ext:
+            images.append(p)
+    return pdfs, images
 
 
 def _is_na(value: object) -> bool:
@@ -127,6 +153,44 @@ def _search_bases(root_resolved: Path, path_subroots: list[str] | None) -> list[
     return bases
 
 
+def _suffix_display_rank(suffix: str) -> int:
+    """Plus la valeur est petite, plus le fichier est prioritaire pour l’affichage (homonymes)."""
+    s = suffix.lower()
+    if s in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}:
+        return 0
+    if s in {".mp4", ".mov", ".webm", ".mkv"}:
+        return 1
+    if s in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}:
+        return 2
+    if s == ".pdf":
+        return 3
+    if s in {".odt", ".ods", ".docx", ".xlsx", ".doc", ".ppt", ".pptx", ".rtf"}:
+        return 4
+    return 5
+
+
+def _path_sort_key(p: Path) -> tuple[int | str, ...]:
+    return (_suffix_display_rank(p.suffix), str(p.resolve()).lower())
+
+
+def _stem_match_rank_for_query(p: Path, query_stem: str) -> int:
+    """0 = stem identique au libellé tableur ; 1 = préfixe (ex. base_001) ; 2 = autre."""
+    if not query_stem:
+        return 2
+    s = p.stem.lower()
+    q = query_stem.lower()
+    if s == q:
+        return 0
+    if s.startswith(q + "_") or s.startswith(q + "-"):
+        return 1
+    return 2
+
+
+def sort_paths_for_display(paths: list[Path]) -> list[Path]:
+    """Trie pour l’UI : préfère images aux PDF quand plusieurs chemins correspondent au même nom logique."""
+    return sorted(paths, key=_path_sort_key)
+
+
 def _suffix_matches_media(suffix: str, media_kind: str) -> bool:
     s = suffix.lower()
     if media_kind == "all":
@@ -139,15 +203,84 @@ def _suffix_matches_media(suffix: str, media_kind: str) -> bool:
     return s in exts
 
 
-def _dedupe_sorted(paths: list[Path], root_resolved: Path) -> list[Path]:
+def _dedupe_sorted(
+    paths: list[Path],
+    root_resolved: Path,
+    *,
+    stem_hint: str | None = None,
+) -> list[Path]:
     seen: set[str] = set()
+
+    def sort_key(p: Path) -> tuple:
+        if stem_hint is not None:
+            return (
+                _stem_match_rank_for_query(p, stem_hint),
+                _suffix_display_rank(p.suffix),
+                str(p.resolve()).lower(),
+            )
+        return _path_sort_key(p)
+
     out: list[Path] = []
-    for p in sorted(paths, key=lambda x: str(x).lower()):
+    for p in sorted(paths, key=sort_key):
         key = str(p.resolve())
         if key not in seen:
             seen.add(key)
             out.append(p)
     return [p for p in out if _is_under_root(p, root_resolved)]
+
+
+def _rglob_leaf_variants(base: Path, stem: str, ext: str) -> list[Path]:
+    """Trouve les fichiers stem+ext ; variantes de casse du suffixe pour FS sensibles à la casse."""
+    found: list[Path] = []
+    ex = ext.lower()
+    if not ex.startswith("."):
+        return found
+    leaves = [f"{stem}{ex}", f"{stem}.{ex[1:].upper()}"]
+    seen_leaf: set[str] = set()
+    for leaf in leaves:
+        if leaf in seen_leaf:
+            continue
+        seen_leaf.add(leaf)
+        for path in base.rglob(leaf):
+            if path.is_file():
+                found.append(path)
+    return found
+
+
+def _glob_stem_prefix_image_variants(
+    base: Path,
+    stem: str,
+    ext: str,
+    root_resolved: Path,
+    media_kind: str,
+) -> list[Path]:
+    """
+    Fichiers dont le nom commence par « stem_ » ou « stem- » avant l’extension
+    (ex. CD-AE-01-001_001.jpg pour stem CD-AE-01-001). Réservé aux images.
+    """
+    if not stem or not ext.lower().startswith("."):
+        return []
+    if ext.lower() not in _IMAGE_EXT_PREFIX_GLOB:
+        return []
+    if not _suffix_matches_media(ext, media_kind):
+        return []
+    safe = glob_escape(stem)
+    ex = ext.lower()
+    found: list[Path] = []
+    for pattern in (f"**/{safe}_*{ex}", f"**/{safe}-*{ex}"):
+        try:
+            for path in base.glob(pattern):
+                if not path.is_file() or not _is_under_root(path, root_resolved):
+                    continue
+                if not _suffix_matches_media(path.suffix, media_kind):
+                    continue
+                ps = path.stem.lower()
+                q = stem.lower()
+                if ps == q or ps.startswith(q + "_") or ps.startswith(q + "-"):
+                    found.append(path)
+        except (OSError, ValueError):
+            continue
+    return found
 
 
 def collect_matching_paths(
@@ -204,15 +337,23 @@ def collect_matching_paths(
                     matches.append(c2)
                 # Un seul segment (ex. CD-AE-01-001) : chercher ce nom de fichier dans toute l’arborescence
                 if len(rel.parts) == 1:
-                    leaf = f"{rel.stem}{ext}"
-                    for path in base.rglob(leaf):
-                        if path.is_file() and _is_under_root(path, root_resolved) and _suffix_matches_media(
+                    for path in _rglob_leaf_variants(base, rel.stem, ext):
+                        if _is_under_root(path, root_resolved) and _suffix_matches_media(
                             path.suffix,
                             media_kind,
                         ):
                             matches.append(path)
+                    for path in _glob_stem_prefix_image_variants(
+                        base,
+                        rel.stem,
+                        ext,
+                        root_resolved,
+                        media_kind,
+                    ):
+                        matches.append(path)
 
-    return _dedupe_sorted(matches, root_resolved)
+    stem_hint = rel.stem if (not rel.suffix and len(rel.parts) == 1 and rel.name) else None
+    return _dedupe_sorted(matches, root_resolved, stem_hint=stem_hint)
 
 
 def resolve_linked_file(

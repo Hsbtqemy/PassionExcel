@@ -47,6 +47,7 @@ call ".venv\Scripts\activate.bat"
 echo Installation ou mise a jour des dependances...
 python -m pip install --upgrade pip >nul 2>&1
 pip install -r requirements.txt
+pip install "streamlit[pdf]>=1.55,<2"
 if errorlevel 1 (
     echo [Erreur] pip install a echoue.
     pause

@@ -47,6 +47,7 @@ source ".venv/bin/activate"
 echo "Installation ou mise à jour des dépendances..."
 python -m pip install --upgrade pip >/dev/null
 pip install -r requirements.txt
+pip install "streamlit[pdf]>=1.55,<2"
 
 echo ""
 echo "Lancement de l'application. Le navigateur va s'ouvrir."

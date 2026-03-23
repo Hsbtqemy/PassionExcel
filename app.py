@@ -118,7 +118,7 @@ with st.sidebar:
         if st.button(
             "📄 Choisir le fichier sur cet ordinateur…",
             key="btn_pick_table_file",
-            use_container_width=True,
+            width="stretch",
             help="Ouvre l’explorateur pour un fichier CSV, Excel, ODS ou ODT.",
         ):
             try:
@@ -142,7 +142,7 @@ with st.sidebar:
     if st.button(
         "📁 Choisir le dossier des documents…",
         key="btn_pick_assets_dir",
-        use_container_width=True,
+        width="stretch",
         help="Ouvre l’explorateur pour choisir le dossier racine du corpus (images, PDF, etc.).",
     ):
         try:
@@ -344,13 +344,13 @@ inject_notice_styles()
 nav_a, nav_b, nav_c = st.columns([1, 1, 4])
 
 with nav_a:
-    if st.button("◀ Précédente", use_container_width=True, help="Notice précédente dans la liste filtrée"):
+    if st.button("◀ Précédente", width="stretch", help="Notice précédente dans la liste filtrée"):
         cur = index_list.index(st.session_state.selected_index)
         if cur > 0:
             st.session_state.selected_index = index_list[cur - 1]
 
 with nav_b:
-    if st.button("Suivante ▶", use_container_width=True, help="Notice suivante dans la liste filtrée"):
+    if st.button("Suivante ▶", width="stretch", help="Notice suivante dans la liste filtrée"):
         cur = index_list.index(st.session_state.selected_index)
         if cur < len(index_list) - 1:
             st.session_state.selected_index = index_list[cur + 1]
@@ -383,7 +383,8 @@ if assets_dir.strip():
 # Zone principale : fiche notice + document (fichier résolu à la sélection)
 # ---------------------------------------------------------------------------
 
-col_left, col_right = st.columns([1.12, 1.28], gap="large")
+# 60 % fiche (gauche) / 40 % documents (droite) — ajustements responsive dans inject_notice_styles
+col_left, col_right = st.columns([3, 2], gap="large")
 
 with col_left:
     render_notice_fiche(
@@ -394,7 +395,9 @@ with col_left:
         meta_cols=meta_cols,
     )
 
-with col_right:
+@st.fragment
+def _document_panel_fragment() -> None:
+    """Isole les reruns du panneau médias (clics galerie, « Charger plus » PDF) du reste de la page."""
     render_document_panel(
         selected_row=selected_row,
         file_col=file_col,
@@ -405,6 +408,10 @@ with col_right:
         assets_dir_valid=assets_dir_valid,
         media_kind=media_kind,
     )
+
+
+with col_right:
+    _document_panel_fragment()
 
 # ---------------------------------------------------------------------------
 # Aperçu tabulaire (optionnel)

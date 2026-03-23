@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from passion_excel.display import display_linked_file
+from passion_excel.display import display_image_gallery, display_linked_file, display_pdf_file
 from passion_excel.files import (
     MEDIA_KIND_LABELS_FR,
     collect_matching_paths,
@@ -16,6 +17,8 @@ from passion_excel.files import (
     parse_file_names,
     parse_path_roots,
     preview_notice_files_count,
+    sort_paths_for_display,
+    split_matches_pdf_images,
     suggest_paths_by_name_fragment,
 )
 from passion_excel.notice_helpers import normalize_value
@@ -23,6 +26,40 @@ from passion_excel.notice_helpers import normalize_value
 
 def _esc(s: str) -> str:
     return html.escape(s, quote=True)
+
+
+def _dedupe_file_names_ordered(names: list[str]) -> list[str]:
+    """Évite les doublons (souvent dus aux exports) tout en conservant l’ordre."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in names:
+        t = n.strip()
+        if not t or t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return out
+
+
+def _cell_display_str(value: object) -> str:
+    """Représentation texte stable pour colonnes pandas « object » (évite erreurs Arrow int/bytes/str mélangés)."""
+    try:
+        if pd.isna(value):
+            return ""
+    except (ValueError, TypeError):
+        pass
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _sanitize_dataframe_for_streamlit(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise les colonnes « object » pour la sérialisation Arrow de st.dataframe."""
+    out = df.copy()
+    for col in out.columns:
+        if out[col].dtype == object:
+            out[col] = out[col].map(_cell_display_str)
+    return out
 
 
 def _format_prose(text: str) -> str:
@@ -146,6 +183,73 @@ def inject_notice_styles() -> None:
     color: #57534e;
     line-height: 1.55;
   }
+  /* Erreur / infos : fonds opaques (les alertes natives Streamlit sont souvent en pastel « lavé ») */
+  .pe-file-error,
+  .pe-file-error *,
+  .pe-doc-info,
+  .pe-doc-info * {
+    opacity: 1 !important;
+  }
+  .pe-doc-info {
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    border-radius: 14px;
+    padding: 1rem 1.15rem;
+    margin-bottom: 0.75rem;
+    color: #1e3a8a;
+    font-size: 0.95rem;
+    line-height: 1.55;
+  }
+  /* Colonne documents + Markdown HTML : forcer l’opacité (évite un rendu grisé sous les visualiseurs) */
+  section.main [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(2):last-child) > [data-testid="column"]:last-child,
+  section.main [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(2):last-child) > [data-testid="column"]:last-child * {
+    opacity: 1 !important;
+  }
+  section.main [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2),
+  section.main [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2) * {
+    opacity: 1 !important;
+  }
+  section.main [data-testid="column"] [data-testid="stMarkdownContainer"] {
+    opacity: 1 !important;
+  }
+  section.main [data-testid="stVerticalBlockBorderWrapper"],
+  section.main [data-testid="stVerticalBlockBorderWrapper"] * {
+    opacity: 1 !important;
+  }
+
+  /* Zone principale : 2 colonnes (fiche + documents) — 60/40 sur grand écran, pile en dessous du breakpoint */
+  @media (min-width: 960px) {
+    section.main [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(2):last-child) {
+      flex-wrap: nowrap !important;
+      align-items: flex-start !important;
+    }
+    section.main [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(2):last-child)
+      > [data-testid="column"]:nth-child(1) {
+      flex: 0 0 60% !important;
+      max-width: 60% !important;
+      min-width: 0 !important;
+    }
+    section.main [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(2):last-child)
+      > [data-testid="column"]:nth-child(2) {
+      flex: 0 0 40% !important;
+      max-width: 40% !important;
+      min-width: 0 !important;
+    }
+  }
+  @media (max-width: 959px) {
+    section.main [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(2):last-child) {
+      flex-direction: column !important;
+      flex-wrap: nowrap !important;
+      align-items: stretch !important;
+    }
+    section.main [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(2):last-child)
+      > [data-testid="column"] {
+      flex: 1 1 auto !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+    }
+  }
 </style>
         """,
         unsafe_allow_html=True,
@@ -220,7 +324,7 @@ def render_document_panel(
     media_kind: str = "all",
 ) -> None:
     """Panneau droit : un ou plusieurs fichiers ; chemins relatifs optionnels sous la racine."""
-    names = parse_file_names(selected_row.get(file_col))
+    names = _dedupe_file_names_ordered(parse_file_names(selected_row.get(file_col)))
 
     st.markdown(
         """
@@ -290,106 +394,131 @@ def render_document_panel(
     kind_label = MEDIA_KIND_LABELS_FR.get(media_kind, media_kind)
     st.caption(f"Filtre de type actuel : **{kind_label}** (modifiable dans la barre latérale).")
 
-    for i, expected in enumerate(names):
+    if len(names) > 1:
         st.markdown(
             f"""
+<div class="pe-doc-info">
+  <strong>{len(names)} noms de fichiers</strong> sont listés pour cette notice (séparateurs : <code>;</code> <code>|</code> ou retour à la ligne).
+  Chaque bloc ci-dessous est indépendant : un fichier peut s’afficher correctement alors qu’un autre est signalé introuvable.
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    for i, expected in enumerate(names):
+        with st.container(border=True):
+            st.markdown(
+                f"""
 <div class="pe-notice-shell">
   <div class="pe-card pe-card--doc">
     <p class="pe-kicker" style="margin-bottom:0.35rem;">Fichier {i + 1} / {len(names)}</p>
     <p style="margin:0;font-size:1rem;font-weight:600;color:#1c1917;">{_esc(expected)}</p>
   </div>
 </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                """,
+                unsafe_allow_html=True,
+            )
 
-        matches = sorted(
-            collect_matching_paths(
+            matches = collect_matching_paths(
                 assets_path,
                 expected,
                 path_subroots=path_subroots,
                 media_kind=media_kind,
-            ),
-            key=lambda p: str(p).lower(),
-        )
+            )
 
-        resolved: Path | None = None
-        if len(matches) >= 1:
-            resolved = matches[0]
-            if len(matches) > 1:
-                st.caption(
-                    f"{len(matches)} fichiers correspondent ; affichage automatique du premier (ordre alphabétique des chemins)."
-                )
-        elif media_kind != "all":
-            all_matches = sorted(
-                collect_matching_paths(
+            resolved: Path | None = None
+            display_paths: list[Path] = []
+            if len(matches) >= 1:
+                resolved = matches[0]
+                display_paths = list(matches)
+                if len(matches) > 1:
+                    st.caption(
+                        f"{len(matches)} fichiers correspondent ; affichage du plus pertinent "
+                        "(images avant PDF, puis autres types, puis ordre des chemins)."
+                    )
+            elif media_kind != "all":
+                all_matches = collect_matching_paths(
                     assets_path,
                     expected,
                     path_subroots=path_subroots,
                     media_kind="all",
-                ),
-                key=lambda p: str(p).lower(),
-            )
-            if len(all_matches) >= 1:
-                resolved = all_matches[0]
-                if len(all_matches) > 1:
-                    st.caption(
-                        f"Aucun fichier pour le filtre « {kind_label} » ; {len(all_matches)} fichier(s) en « Tous types » "
-                        "— affichage du premier."
-                    )
-                else:
-                    st.success(
-                        f"Fichier trouvé en élargissant au type « Tous types » (le filtre « {kind_label} » excluait cette extension)."
-                    )
+                )
+                if len(all_matches) >= 1:
+                    resolved = all_matches[0]
+                    display_paths = list(all_matches)
+                    if len(all_matches) > 1:
+                        st.caption(
+                            f"Aucun fichier pour le filtre « {kind_label} » ; {len(all_matches)} fichier(s) en « Tous types » "
+                            "— affichage du premier."
+                        )
+                    else:
+                        st.success(
+                            f"Fichier trouvé en élargissant au type « Tous types » (le filtre « {kind_label} » excluait cette extension)."
+                        )
 
-        if resolved is None:
-            exp_path = Path(expected)
-            frag = exp_path.stem if len(exp_path.stem) >= 2 else exp_path.name
-            sugg = suggest_paths_by_name_fragment(
-                assets_path,
-                frag,
-                path_subroots=path_subroots,
-                media_kind=media_kind,
-            )
-            if not sugg and media_kind != "all":
+            if resolved is None:
+                exp_path = Path(expected)
+                frag = exp_path.stem if len(exp_path.stem) >= 2 else exp_path.name
                 sugg = suggest_paths_by_name_fragment(
                     assets_path,
                     frag,
                     path_subroots=path_subroots,
-                    media_kind="all",
+                    media_kind=media_kind,
                 )
-            if sugg:
-                sugg = sorted(sugg, key=lambda p: str(p).lower())
-                resolved = sugg[0]
-                if len(sugg) > 1:
-                    st.caption(
-                        f"{len(sugg)} fichiers dont le nom contient « {frag} » ; affichage automatique du premier."
+                if not sugg and media_kind != "all":
+                    sugg = suggest_paths_by_name_fragment(
+                        assets_path,
+                        frag,
+                        path_subroots=path_subroots,
+                        media_kind="all",
                     )
-                else:
-                    st.caption("Fichier détecté par correspondance partielle du nom.")
+                if sugg:
+                    sugg = sort_paths_for_display(sugg)
+                    resolved = sugg[0]
+                    display_paths = list(sugg)
+                    if len(sugg) > 1:
+                        st.caption(
+                            f"{len(sugg)} fichiers dont le nom contient « {frag} » ; affichage automatique du premier."
+                        )
+                    else:
+                        st.caption("Fichier détecté par correspondance partielle du nom.")
 
-        if resolved is None:
-            st.markdown(
-                """
-<div class="pe-card pe-card--doc" style="border-color:#fecaca;background:#fef2f2;">
-  <p class="pe-empty-hint" style="color:#991b1b;margin:0;">
-    <strong>Introuvable</strong> pour ce nom dans les dossiers autorisés (avec le filtre actuel).
+            if resolved is None:
+                st.markdown(
+                    f"""
+<div class="pe-file-error pe-card pe-card--doc" style="border:1px solid #fecaca;background:#fef2f2 !important;box-shadow:none;">
+  <p class="pe-empty-hint" style="color:#991b1b !important;margin:0;opacity:1 !important;">
+    <strong>Introuvable :</strong> « {_esc(expected)} » — aucune correspondance dans les dossiers autorisés
+    (filtre <strong>{_esc(kind_label)}</strong>). Vérifiez l’orthographe, l’extension, la racine ou la colonne chemins.
   </p>
 </div>
-                """,
+                    """,
+                    unsafe_allow_html=True,
+                )
+                continue
+
+            st.markdown(
+                f'<p class="pe-doc-path">Chemin résolu : {_esc(str(resolved))}</p>',
                 unsafe_allow_html=True,
             )
-            st.caption(
-                "Vérifiez l’orthographe, l’extension, ou que le fichier est bien sous la racine "
-                "(et dans les sous-dossiers indiqués si une colonne chemins est utilisée)."
-            )
-            continue
-
-        st.markdown(
-            f'<p class="pe-doc-path">Chemin résolu : {_esc(str(resolved))}</p>',
-            unsafe_allow_html=True,
-        )
-        display_linked_file(resolved, show_filename_header=False)
+            if not display_paths:
+                display_paths = [resolved]
+            pdfs, imgs = split_matches_pdf_images(display_paths)
+            gal_suffix = hashlib.sha256(f"{expected}|{i}".encode("utf-8")).hexdigest()[:16]
+            skip: set[Path] = set()
+            if pdfs:
+                display_pdf_file(pdfs[0])
+                skip.add(pdfs[0])
+            if imgs:
+                display_image_gallery(imgs, session_key_suffix=gal_suffix)
+                skip.update(imgs)
+            if not pdfs and not imgs:
+                display_linked_file(resolved, show_filename_header=False)
+            else:
+                for p in display_paths:
+                    if p in skip:
+                        continue
+                    display_linked_file(p, show_filename_header=False)
 
 
 def render_filtered_preview(
@@ -420,4 +549,8 @@ def render_filtered_preview(
             return f"{found}/{total}"
 
         preview["_fichiers_trouvés"] = preview.apply(_status, axis=1)
-    st.dataframe(preview, use_container_width=True, hide_index=False)
+    st.dataframe(
+        _sanitize_dataframe_for_streamlit(preview),
+        width="stretch",
+        hide_index=False,
+    )
