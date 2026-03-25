@@ -21,7 +21,7 @@ Les dossiers **`installer/windows/embed/`** et **`installer/mac/embed/`** sont *
    ```
    Cela crée `embed\python\` avec la distribution **embeddable** officielle (amd64), **pip** inclus.
 3. **Ou** double-cliquez sur **`build.bat`** : si `embed\python\` est absent, le script lance `prepare_embed_python.ps1` (téléchargement). Sans ce dossier, **Inno Setup échoue** sur la ligne `embed\python\*` (le compilateur exige que les fichiers sources existent).
-4. Résultat : `installer\dist\PassionExcel_Setup_0.2.3.exe` (le numéro suit `#define MyAppVersion` dans `PassionExcel.iss`).
+4. Résultat : `installer\dist\PassionExcel_Setup_0.2.4.exe` (le numéro suit `#define MyAppVersion` dans `PassionExcel.iss`).
 
 L’utilisateur final obtient une copie dans **`%LOCALAPPDATA%\PassionExcel`** (sans espace dans le nom du dossier) avec raccourcis ; **`run.bat`** utilisera le Python copié dans `python\` s’il n’a pas déjà Python 3.11+ sur le PATH.
 
@@ -64,9 +64,13 @@ Le dépôt inclut **`.github/workflows/release-installer.yml`** :
 
 Le paquet **macOS** (`.app` / DMG) et le script **`run.sh`** ne sont pas produits par cette CI : le `.sh` est déjà versionné à la racine ; le build Mac reste à faire sur une machine macOS (voir section macOS ci-dessus).
 
+### Le `.exe` de la release est-il « standalone » ?
+
+**Non** : c’est un **installateur Inno Setup**. Il copie l’application (dont **`PassionExcel.vbs`**, **`run.bat`**, Python embarqué si le build l’a inclus) sous **`%LOCALAPPDATA%\PassionExcel`**. Ce n’est pas un **seul** exécutable autonome type PyInstaller ; après installation, l’app tourne comme un projet Streamlit classique (console + navigateur).
+
 ### Dépannage Windows (message « impossible d’accéder au périphérique, au chemin… »)
 
-Souvent lié au **raccourci** ou à un **chemin avec espaces**. Les installateurs récents utilisent **`cmd.exe /c run.bat`** avec **« Démarrer dans »** = dossier d’installation, et installent sous **`%LOCALAPPDATA%\PassionExcel`** (sans espace). Si le problème persiste :
+Les raccourcis passent par **`wscript.exe`** et **`PassionExcel.vbs`** (plus fiable qu’un `.lnk` vers `run.bat` seul). L’installation va sous **`%LOCALAPPDATA%\PassionExcel`**. Si le problème persiste :
 
 - Ouvrez l’explorateur, allez dans **`%LOCALAPPDATA%\PassionExcel`** (ou **`%LOCALAPPDATA%\Passion Excel`** si ancienne installation) et double-cliquez sur **`run.bat`**.
 - Vérifiez qu’**aucun antivirus / stratégie** ne bloque **`powershell.exe`**, **`cmd.exe`** ou **`python.exe`** dans ce dossier.

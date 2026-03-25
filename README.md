@@ -51,7 +51,7 @@ Pour distribuer un **assistant d’installation** (raccourcis, dossier d’insta
 - Dossier **`installer/`** : script **Inno Setup** pour Windows (`.exe` généré) et script **`build_app.sh`** pour créer **`PassionExcel.app`** + **DMG** sur Mac.
 - Instructions détaillées : **[installer/README.md](installer/README.md)**.
 
-Ces installateurs **copient** l’application ; **Python reste à installer séparément** sur la machine cible.
+**À bien comprendre pour Windows :** le fichier **`PassionExcel_Setup_….exe`** sur la **release GitHub** n’est **pas** une application « **standalone** » au sens d’un **seul** `.exe` qui contiendrait tout (comme certains outils packagés avec PyInstaller). C’est un **installateur** classique : il **décompresse** l’appli, **`run.bat`**, un **Python embarqué** (build CI), etc. dans **`%LOCALAPPDATA%\PassionExcel`**, puis vous lancez l’outil via le **raccourci** ou **`run.bat`** dans ce dossier. Ce n’est **pas** un binaire unique sans installation.
 
 ## Prérequis
 
@@ -150,7 +150,7 @@ Le dépôt peut être connecté à **[Streamlit Community Cloud](https://streaml
 
 ## Installateur Windows (.exe)
 
-Voir **`installer/README.md`** : compilation locale avec **Inno Setup 6** et **`installer/windows/build.bat`**. Sur **GitHub**, le workflow **`.github/workflows/release-installer.yml`** compile l’installateur et attache le **`.exe`** à une **release** lorsque vous poussez un **tag** `v*` (ex. `v0.2.3`).
+Voir **`installer/README.md`** : compilation locale avec **Inno Setup 6** et **`installer/windows/build.bat`**. Sur **GitHub**, le workflow **`.github/workflows/release-installer.yml`** compile l’installateur et attache le **`.exe`** à une **release** lorsque vous poussez un **tag** `v*` (ex. `v0.2.4`).
 
 Le script **`run.sh`** n’a pas de phase de build : il est fourni tel quel pour macOS / Linux.
 

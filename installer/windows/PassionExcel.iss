@@ -2,7 +2,7 @@
 ; Avant compilation : executer prepare_embed_python.ps1 pour inclure Python embarque (optionnel mais recommande).
 
 #define MyAppName "Passion Excel"
-#define MyAppVersion "0.2.3"
+#define MyAppVersion "0.2.4"
 ; Dossier sans espace (evite erreurs Windows sur raccourcis / chemins).
 #define MyInstallDirName "PassionExcel"
 #define MyAppPublisher "Passion Excel"
@@ -38,21 +38,21 @@ Source: "..\..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\requirements-pillow-simd.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\run.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\PassionExcel.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\run.sh"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\passion_excel\*"; DestDir: "{app}\passion_excel"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\examples\*"; DestDir: "{app}\examples"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Python embarque (present si prepare_embed_python.ps1 a ete execute)
 Source: "embed\python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: DirEmbedPython
 
-; Raccourcis : cmd.exe + WorkingDir evite les chemins avec espaces dans la ligne de commande
-; (PowerShell -Command dans l'ISS peut mal se serialiser dans le .lnk sur certaines machines).
+; Raccourcis : wscript.exe + PassionExcel.vbs (lance cmd avec bon repertoire ; plus fiable que .lnk -> .bat)
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{sys}\cmd.exe"; Parameters: "/c run.bat"; WorkingDir: "{app}"; Comment: "Lancer la consultation documentaire"
-Name: "{userdesktop}\{#MyAppName}"; Filename: "{sys}\cmd.exe"; Parameters: "/c run.bat"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{sys}\wscript.exe"; Parameters: "//nologo ""{app}\PassionExcel.vbs"""; WorkingDir: "{app}"; Comment: "Lancer la consultation documentaire"
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{sys}\wscript.exe"; Parameters: "//nologo ""{app}\PassionExcel.vbs"""; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{sys}\cmd.exe"; Parameters: "/c run.bat"; WorkingDir: "{app}"; Description: "Lancer {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{sys}\wscript.exe"; Parameters: "//nologo ""{app}\PassionExcel.vbs"""; WorkingDir: "{app}"; Description: "Lancer {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\.venv"
