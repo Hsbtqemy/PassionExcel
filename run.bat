@@ -46,9 +46,20 @@ call ".venv\Scripts\activate.bat"
 
 echo Installation ou mise a jour des dependances...
 python -m pip install --upgrade pip >nul 2>&1
-pip install -r requirements.txt
+pip install -r "%~dp0requirements.txt"
 if errorlevel 1 (
     echo [Erreur] pip install a echoue.
+    pause
+    exit /b 1
+)
+
+REM Toujours se placer dans le dossier du script (activate.bat peut modifier le contexte)
+cd /d "%~dp0"
+
+set "APP_PY=%CD%\app.py"
+if not exist "%APP_PY%" (
+    echo [Erreur] app.py introuvable : %APP_PY%
+    echo Verifiez que run.bat est bien a la racine du projet ^(a cote de app.py^).
     pause
     exit /b 1
 )
@@ -57,7 +68,8 @@ echo.
 echo Lancement de l'application. Le navigateur va s'ouvrir.
 echo Fermez la fenetre noire pour arreter le programme.
 echo.
-python -m streamlit run app.py
+REM Chemin absolu (APP_PY) : evite l'erreur Streamlit "File does not exist: app.py"
+python -m streamlit run "%APP_PY%"
 
 if errorlevel 1 (
     echo.

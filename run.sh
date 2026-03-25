@@ -52,4 +52,5 @@ echo ""
 echo "Lancement de l'application. Le navigateur va s'ouvrir."
 echo "Interrompez avec Ctrl+C dans ce terminal pour arrêter."
 echo ""
-exec python -m streamlit run app.py
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+exec python -m streamlit run "$ROOT/app.py"

@@ -1,4 +1,6 @@
 # Compile l’installateur Windows (Inno Setup) et publie le .exe en release GitHub pour les tags v*
+# (sur Windows, les globs de softprops/action-gh-release peuvent ne rien matcher → release vide ;
+#  on utilise gh CLI avec le chemin absolu du .exe.)
 name: Release (installateur Windows)
 
 on:
@@ -40,6 +42,7 @@ jobs:
       - name: Compiler l’installateur
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $candidates = @(
             "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
             "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
@@ -47,11 +50,25 @@ jobs:
           $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iscc) { throw "ISCC.exe introuvable après choco install innosetup." }
           Write-Host "Utilisation de : $iscc"
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\installer\dist" | Out-Null
           & $iscc "$env:GITHUB_WORKSPACE\installer\windows\PassionExcel.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Get-ChildItem "$env:GITHUB_WORKSPACE\installer\dist\*.exe" | ForEach-Object {
+          Get-ChildItem "$env:GITHUB_WORKSPACE\installer\dist" -ErrorAction SilentlyContinue | ForEach-Object {
             Write-Host "Sortie : $($_.Name) ($([math]::Round($_.Length/1MB, 2)) Mo)"
           }
+
+      - name: Vérifier que le .exe existe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dist = Join-Path $env:GITHUB_WORKSPACE "installer\dist"
+          $exes = Get-ChildItem $dist -Filter "*.exe" -ErrorAction SilentlyContinue
+          if (-not $exes -or $exes.Count -eq 0) {
+            Write-Host "::error::Aucun .exe dans $dist — compilation Inno Setup sans sortie."
+            Get-ChildItem $dist -Force | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+          $exes | ForEach-Object { Write-Host "OK: $($_.FullName) ($($_.Length) octets)" }
 
       - name: Artefact (fichier .exe)
         uses: actions/upload-artifact@v4
@@ -59,11 +76,22 @@ jobs:
           name: PassionExcel-Windows-Setup
           path: installer/dist/*.exe
 
-      - name: Créer la release GitHub (binaire joint)
+      - name: Publier le .exe sur la release GitHub
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: installer/dist/*.exe
-          generate_release_notes: true
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "${{ github.ref_name }}"
+          $exe = Get-ChildItem "$env:GITHUB_WORKSPACE\installer\dist\*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Aucun .exe à publier." }
+          Write-Host "Publication de : $($exe.FullName)"
+          # La release peut déjà exister (vide) ; gh upload exige une release existante
+          $asset = $exe.FullName
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag $asset --title $tag --generate-notes
+          } else {
+            gh release upload $tag $asset --clobber
+          }

@@ -58,7 +58,9 @@ Le dépôt inclut **`.github/workflows/release-installer.yml`** :
 
 - **Déclenchement** : push d’un **tag** `v*` (ex. `v0.2.0`) ou exécution manuelle (**Actions → Release (installateur Windows) → Run workflow**).
 - **Runner** : `windows-latest`, **Chocolatey** installe **Inno Setup 6**, puis compilation de `PassionExcel.iss` (sans Python embarqué dans `embed/` sauf si vous adaptez le workflow).
-- Pour un **tag** `vX.Y.Z`, la version dans le `.iss` est **remplacée** automatiquement avant compilation ; une **release GitHub** est créée avec le **`.exe`** en pièce jointe.
+- Pour un **tag** `vX.Y.Z`, la version dans le `.iss` est **remplacée** automatiquement avant compilation ; le workflow publie le **`.exe`** sur la release avec **`gh release upload`** (chemin absolu, pour éviter une release **sans binaire** à cause des globs Windows).
+- **Paramètres dépôt** : **Settings → Actions → General → Workflow permissions** → cocher **Read and write permissions** (sinon `GITHUB_TOKEN` ne peut pas créer / mettre à jour les releases).
+- Si une release est **vide** : ouvrir l’onglet **Actions**, vérifier que le job **Release (installateur Windows)** est **vert** ; en cas d’échec (Inno Setup, `app.py` manquant au build, etc.), corriger puis **repousser un nouveau tag** ou relancer le workflow.
 
 Le paquet **macOS** (`.app` / DMG) et le script **`run.sh`** ne sont pas produits par cette CI : le `.sh` est déjà versionné à la racine ; le build Mac reste à faire sur une machine macOS (voir section macOS ci-dessus).
 
