@@ -50,6 +50,10 @@ Clone du dépôt : placez un Python embarqué **à la racine** dans `./python/` 
 
 ## CI GitHub (installateur Windows)
 
+**Rappel :** un **tag Git** pointe toujours vers un **commit** : dans l’historique, « sur le tag » il n’y a que le **code source** (aucun `.exe` n’est commité — et ce n’est pas souhaitable). Sur la **page Release** GitHub, les liens **Source code (zip / tar.gz)** sont générés automatiquement à partir de ce commit.
+
+Le workflow ci-dessous **construit** l’installateur **à partir** de ce code sur un runner Windows, puis **ajoute** le fichier `PassionExcel_Setup_….exe` comme **asset** de la même release (en plus des archives source).
+
 Le dépôt inclut **`.github/workflows/release-installer.yml`** :
 
 - **Déclenchement** : push d’un **tag** `v*` (ex. `v0.2.0`) ou exécution manuelle (**Actions → Release (installateur Windows) → Run workflow**).
