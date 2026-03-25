@@ -2,7 +2,9 @@
 ; Avant compilation : executer prepare_embed_python.ps1 pour inclure Python embarque (optionnel mais recommande).
 
 #define MyAppName "Passion Excel"
-#define MyAppVersion "0.2.2"
+#define MyAppVersion "0.2.3"
+; Dossier sans espace (evite erreurs Windows sur raccourcis / chemins).
+#define MyInstallDirName "PassionExcel"
 #define MyAppPublisher "Passion Excel"
 #define MyAppURL "https://github.com/Hsbtqemy/PassionExcel"
 
@@ -14,7 +16,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={localappdata}\{#MyAppName}
+DefaultDirName={localappdata}\{#MyInstallDirName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -42,15 +44,15 @@ Source: "..\..\examples\*"; DestDir: "{app}\examples"; Flags: ignoreversion recu
 ; Python embarque (present si prepare_embed_python.ps1 a ete execute)
 Source: "embed\python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: DirEmbedPython
 
-; Raccourcis : ne pas cibler run.bat directement (erreur Windows sur chemins/espaces).
-; PowerShell Start-Process lance le .bat avec WorkingDirectory correct.
+; Raccourcis : cmd.exe + WorkingDir evite les chemins avec espaces dans la ligne de commande
+; (PowerShell -Command dans l'ISS peut mal se serialiser dans le .lnk sur certaines machines).
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Start-Process -FilePath '{app}\run.bat' -WorkingDirectory '{app}'"""; WorkingDir: "{app}"; Comment: "Lancer la consultation documentaire"
-Name: "{userdesktop}\{#MyAppName}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Start-Process -FilePath '{app}\run.bat' -WorkingDirectory '{app}'"""; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{sys}\cmd.exe"; Parameters: "/c run.bat"; WorkingDir: "{app}"; Comment: "Lancer la consultation documentaire"
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{sys}\cmd.exe"; Parameters: "/c run.bat"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Start-Process -FilePath '{app}\run.bat' -WorkingDirectory '{app}'"""; WorkingDir: "{app}"; Description: "Lancer {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{sys}\cmd.exe"; Parameters: "/c run.bat"; WorkingDir: "{app}"; Description: "Lancer {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\.venv"

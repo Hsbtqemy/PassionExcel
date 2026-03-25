@@ -21,9 +21,9 @@ Les dossiers **`installer/windows/embed/`** et **`installer/mac/embed/`** sont *
    ```
    Cela crée `embed\python\` avec la distribution **embeddable** officielle (amd64), **pip** inclus.
 3. **Ou** double-cliquez sur **`build.bat`** : si `embed\python\` est absent, le script lance `prepare_embed_python.ps1` (téléchargement). Sans ce dossier, **Inno Setup échoue** sur la ligne `embed\python\*` (le compilateur exige que les fichiers sources existent).
-4. Résultat : `installer\dist\PassionExcel_Setup_0.2.2.exe` (le numéro suit `#define MyAppVersion` dans `PassionExcel.iss`).
+4. Résultat : `installer\dist\PassionExcel_Setup_0.2.3.exe` (le numéro suit `#define MyAppVersion` dans `PassionExcel.iss`).
 
-L’utilisateur final obtient une copie dans `%LOCALAPPDATA%\Passion Excel` avec raccourcis ; **`run.bat`** utilisera le Python copié dans `python\` s’il n’a pas déjà Python 3.11+ sur le PATH.
+L’utilisateur final obtient une copie dans **`%LOCALAPPDATA%\PassionExcel`** (sans espace dans le nom du dossier) avec raccourcis ; **`run.bat`** utilisera le Python copié dans `python\` s’il n’a pas déjà Python 3.11+ sur le PATH.
 
 ---
 
@@ -66,9 +66,9 @@ Le paquet **macOS** (`.app` / DMG) et le script **`run.sh`** ne sont pas produit
 
 ### Dépannage Windows (message « impossible d’accéder au périphérique, au chemin… »)
 
-Souvent lié au **raccourci** ou à un **chemin avec espaces** (`%LOCALAPPDATA%\Passion Excel`). Les installateurs récents lancent **`run.bat`** via **PowerShell** (`Start-Process`) pour éviter ce cas. Si le problème persiste :
+Souvent lié au **raccourci** ou à un **chemin avec espaces**. Les installateurs récents utilisent **`cmd.exe /c run.bat`** avec **« Démarrer dans »** = dossier d’installation, et installent sous **`%LOCALAPPDATA%\PassionExcel`** (sans espace). Si le problème persiste :
 
-- Ouvrez l’explorateur, allez dans **`%LOCALAPPDATA%\Passion Excel`** et double-cliquez sur **`run.bat`**.
+- Ouvrez l’explorateur, allez dans **`%LOCALAPPDATA%\PassionExcel`** (ou **`%LOCALAPPDATA%\Passion Excel`** si ancienne installation) et double-cliquez sur **`run.bat`**.
 - Vérifiez qu’**aucun antivirus / stratégie** ne bloque **`powershell.exe`**, **`cmd.exe`** ou **`python.exe`** dans ce dossier.
 - Si le dossier est sous **OneDrive** « fichiers en ligne uniquement », **téléchargez-le en local** avant de lancer l’appli.
 

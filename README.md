@@ -150,7 +150,7 @@ Le dépôt peut être connecté à **[Streamlit Community Cloud](https://streaml
 
 ## Installateur Windows (.exe)
 
-Voir **`installer/README.md`** : compilation locale avec **Inno Setup 6** et **`installer/windows/build.bat`**. Sur **GitHub**, le workflow **`.github/workflows/release-installer.yml`** compile l’installateur et attache le **`.exe`** à une **release** lorsque vous poussez un **tag** `v*` (ex. `v0.2.2`).
+Voir **`installer/README.md`** : compilation locale avec **Inno Setup 6** et **`installer/windows/build.bat`**. Sur **GitHub**, le workflow **`.github/workflows/release-installer.yml`** compile l’installateur et attache le **`.exe`** à une **release** lorsque vous poussez un **tag** `v*` (ex. `v0.2.3`).
 
 Le script **`run.sh`** n’a pas de phase de build : il est fourni tel quel pour macOS / Linux.
 
