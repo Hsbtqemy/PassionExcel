@@ -42,12 +42,15 @@ Source: "..\..\examples\*"; DestDir: "{app}\examples"; Flags: ignoreversion recu
 ; Python embarque (present si prepare_embed_python.ps1 a ete execute)
 Source: "embed\python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: DirEmbedPython
 
+; Raccourcis : ne pas cibler run.bat directement (erreur Windows sur chemins/espaces).
+; PowerShell Start-Process lance le .bat avec WorkingDirectory correct.
+
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\run.bat"; WorkingDir: "{app}"; Comment: "Lancer la consultation documentaire"
-Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\run.bat"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Start-Process -FilePath '{app}\run.bat' -WorkingDirectory '{app}'"""; WorkingDir: "{app}"; Comment: "Lancer la consultation documentaire"
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Start-Process -FilePath '{app}\run.bat' -WorkingDirectory '{app}'"""; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\run.bat"; Description: "Lancer {#MyAppName}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent shellexec
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Start-Process -FilePath '{app}\run.bat' -WorkingDirectory '{app}'"""; WorkingDir: "{app}"; Description: "Lancer {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\.venv"

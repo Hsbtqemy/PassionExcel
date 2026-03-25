@@ -64,6 +64,14 @@ Le dépôt inclut **`.github/workflows/release-installer.yml`** :
 
 Le paquet **macOS** (`.app` / DMG) et le script **`run.sh`** ne sont pas produits par cette CI : le `.sh` est déjà versionné à la racine ; le build Mac reste à faire sur une machine macOS (voir section macOS ci-dessus).
 
+### Dépannage Windows (message « impossible d’accéder au périphérique, au chemin… »)
+
+Souvent lié au **raccourci** ou à un **chemin avec espaces** (`%LOCALAPPDATA%\Passion Excel`). Les installateurs récents lancent **`run.bat`** via **PowerShell** (`Start-Process`) pour éviter ce cas. Si le problème persiste :
+
+- Ouvrez l’explorateur, allez dans **`%LOCALAPPDATA%\Passion Excel`** et double-cliquez sur **`run.bat`**.
+- Vérifiez qu’**aucun antivirus / stratégie** ne bloque **`powershell.exe`**, **`cmd.exe`** ou **`python.exe`** dans ce dossier.
+- Si le dossier est sous **OneDrive** « fichiers en ligne uniquement », **téléchargez-le en local** avant de lancer l’appli.
+
 ## Désinstallation
 
 - Windows : le désinstalleur supprime aussi **`python`** et **`.venv`** sous le dossier d’installation.
