@@ -35,6 +35,14 @@ jobs:
           [System.IO.File]::WriteAllText((Resolve-Path $path), $c, [System.Text.UTF8Encoding]::new($false))
           Write-Host "MyAppVersion = $ver"
 
+      # Inno Setup valide les Source à la compilation : sans ce dossier, la ligne embed\python\* échoue
+      # (Check: DirEmbedPython ne contourne pas cette vérification).
+      - name: Préparer Python embarqué (embed)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "$env:GITHUB_WORKSPACE\installer\windows\prepare_embed_python.ps1"
+
       - name: Installer Inno Setup 6
         shell: pwsh
         run: choco install innosetup -y --no-progress

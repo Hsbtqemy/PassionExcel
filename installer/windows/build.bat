@@ -7,9 +7,10 @@ if not exist "embed\python\python.exe" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0prepare_embed_python.ps1"
     if errorlevel 1 (
         echo.
-        echo [AVERTISSEMENT] Python embarque non disponible. Compilation sans dossier embed ^(l'utilisateur devra avoir Python sur le PATH^).
+        echo [Erreur] Python embarque requis pour compiler PassionExcel.iss ^(ligne embed\python\*^).
         echo.
         pause
+        exit /b 1
     )
 )
 

@@ -20,7 +20,7 @@ Les dossiers **`installer/windows/embed/`** et **`installer/mac/embed/`** sont *
    powershell -ExecutionPolicy Bypass -File .\prepare_embed_python.ps1
    ```
    Cela crée `embed\python\` avec la distribution **embeddable** officielle (amd64), **pip** inclus.
-3. **Ou** double-cliquez sur **`build.bat`** : si `embed\python\` est absent, le script lance `prepare_embed_python.ps1` (téléchargement) ; en cas d’échec, l’installateur est quand même produit **sans** Python embarqué.
+3. **Ou** double-cliquez sur **`build.bat`** : si `embed\python\` est absent, le script lance `prepare_embed_python.ps1` (téléchargement). Sans ce dossier, **Inno Setup échoue** sur la ligne `embed\python\*` (le compilateur exige que les fichiers sources existent).
 4. Résultat : `installer\dist\PassionExcel_Setup_0.2.0.exe` (le numéro suit `#define MyAppVersion` dans `PassionExcel.iss`).
 
 L’utilisateur final obtient une copie dans `%LOCALAPPDATA%\Passion Excel` avec raccourcis ; **`run.bat`** utilisera le Python copié dans `python\` s’il n’a pas déjà Python 3.11+ sur le PATH.
@@ -57,7 +57,7 @@ Le workflow ci-dessous **construit** l’installateur **à partir** de ce code s
 Le dépôt inclut **`.github/workflows/release-installer.yml`** :
 
 - **Déclenchement** : push d’un **tag** `v*` (ex. `v0.2.0`) ou exécution manuelle (**Actions → Release (installateur Windows) → Run workflow**).
-- **Runner** : `windows-latest`, **Chocolatey** installe **Inno Setup 6**, puis compilation de `PassionExcel.iss` (sans Python embarqué dans `embed/` sauf si vous adaptez le workflow).
+- **Runner** : `windows-latest` — exécution de **`prepare_embed_python.ps1`** (télécharge Python embeddable dans `installer/windows/embed/python/`), puis **Chocolatey** installe **Inno Setup 6** et compilation de `PassionExcel.iss`.
 - Pour un **tag** `vX.Y.Z`, la version dans le `.iss` est **remplacée** automatiquement avant compilation ; le workflow publie le **`.exe`** sur la release avec **`gh release upload`** (chemin absolu, pour éviter une release **sans binaire** à cause des globs Windows).
 - **Paramètres dépôt** : **Settings → Actions → General → Workflow permissions** → cocher **Read and write permissions** (sinon `GITHUB_TOKEN` ne peut pas créer / mettre à jour les releases).
 - Si une release est **vide** : ouvrir l’onglet **Actions**, vérifier que le job **Release (installateur Windows)** est **vert** ; en cas d’échec (Inno Setup, `app.py` manquant au build, etc.), corriger puis **repousser un nouveau tag** ou relancer le workflow.
