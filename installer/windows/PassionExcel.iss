@@ -2,7 +2,7 @@
 ; Avant compilation : executer prepare_embed_python.ps1 pour inclure Python embarque (optionnel mais recommande).
 
 #define MyAppName "Passion Excel"
-#define MyAppVersion "0.2.1"
+#define MyAppVersion "0.2.2"
 #define MyAppPublisher "Passion Excel"
 #define MyAppURL "https://github.com/Hsbtqemy/PassionExcel"
 

@@ -21,7 +21,7 @@ Les dossiers **`installer/windows/embed/`** et **`installer/mac/embed/`** sont *
    ```
    Cela crée `embed\python\` avec la distribution **embeddable** officielle (amd64), **pip** inclus.
 3. **Ou** double-cliquez sur **`build.bat`** : si `embed\python\` est absent, le script lance `prepare_embed_python.ps1` (téléchargement). Sans ce dossier, **Inno Setup échoue** sur la ligne `embed\python\*` (le compilateur exige que les fichiers sources existent).
-4. Résultat : `installer\dist\PassionExcel_Setup_0.2.1.exe` (le numéro suit `#define MyAppVersion` dans `PassionExcel.iss`).
+4. Résultat : `installer\dist\PassionExcel_Setup_0.2.2.exe` (le numéro suit `#define MyAppVersion` dans `PassionExcel.iss`).
 
 L’utilisateur final obtient une copie dans `%LOCALAPPDATA%\Passion Excel` avec raccourcis ; **`run.bat`** utilisera le Python copié dans `python\` s’il n’a pas déjà Python 3.11+ sur le PATH.
 
