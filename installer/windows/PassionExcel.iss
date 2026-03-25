@@ -2,7 +2,7 @@
 ; Avant compilation : executer prepare_embed_python.ps1 pour inclure Python embarque (optionnel mais recommande).
 
 #define MyAppName "Passion Excel"
-#define MyAppVersion "0.2.4"
+#define MyAppVersion "0.2.5"
 ; Dossier sans espace (evite erreurs Windows sur raccourcis / chemins).
 #define MyInstallDirName "PassionExcel"
 #define MyAppPublisher "Passion Excel"

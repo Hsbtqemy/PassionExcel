@@ -139,8 +139,8 @@ PassionExcel/
 - **pandas** : lecture tabulaire unifiée (CSV / Excel) et filtrage.
 - **openpyxl** : moteur Excel pour `.xlsx` (standard avec pandas).
 - **Résolution des fichiers** : d’abord `dossier_racine / nom_indiqué`, puis recherche récursive par nom de fichier ; **aucun contenu** de document n’est lu tant qu’une notice n’est pas affichée (seuls les tests d’existence et l’affichage chargent les médias).
-- **PDF** : aperçu via **PyMuPDF** (raster JPEG) + lecteur `st.pdf` en secours ; cache des pages et pagination « charger plus ».
-- **Images** : **Pillow** (redimensionnement, vignettes, JPEG) ; `JPEG draft` et cache pour limiter le coût CPU.
+- **PDF** : par défaut **une page à la fois** (curseur) ; option **défilement continu** ; lien **ouvrir dans une nouvelle fenêtre** (lecteur système via `file://`) ; lecteur `st.pdf` en dernier recours si PyMuPDF indisponible.
+- **Images** : **Pillow** (redimensionnement, vignettes, JPEG) ; **orientation EXIF** appliquée (`exif_transpose`) ; ordre d’affichage défini par le tri des chemins résolus (voir `files.py`), pas par la date de fichier sur disque.
 - **Recherche** : sous-chaîne **sans expression régulière** (`regex=False`) pour éviter les pièges pour les utilisateurs SHS.
 - **Sécurité minimale** : les chemins **absolus** dans le tableur sont ignorés pour le lien fichier ; seul le contenu sous le dossier racine est pris en compte.
 
@@ -150,7 +150,7 @@ Le dépôt peut être connecté à **[Streamlit Community Cloud](https://streaml
 
 ## Installateur Windows (.exe)
 
-Voir **`installer/README.md`** : compilation locale avec **Inno Setup 6** et **`installer/windows/build.bat`**. Sur **GitHub**, le workflow **`.github/workflows/release-installer.yml`** compile l’installateur et attache le **`.exe`** à une **release** lorsque vous poussez un **tag** `v*` (ex. `v0.2.4`).
+Voir **`installer/README.md`** : compilation locale avec **Inno Setup 6** et **`installer/windows/build.bat`**. Sur **GitHub**, le workflow **`.github/workflows/release-installer.yml`** compile l’installateur et attache le **`.exe`** à une **release** lorsque vous poussez un **tag** `v*` (ex. `v0.2.5`).
 
 Le script **`run.sh`** n’a pas de phase de build : il est fourni tel quel pour macOS / Linux.
 

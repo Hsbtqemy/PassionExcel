@@ -16,7 +16,10 @@ import streamlit as st
 
 # Rendu image page par page (PyMuPDF) — défilement continu dans le conteneur, compatible Chrome
 _MAX_PDF_PAGES_RASTER = 100
-_MAX_PDF_BYTES_RASTER = 48 * 1024 * 1024
+# Au-delà : on tente quand même le raster (aperçu plafonné à _MAX_PDF_PAGES_RASTER pages affichables).
+_MAX_PDF_BYTES_SOFT_WARN = 48 * 1024 * 1024
+# Limite « dure » : au-delà, on ne tente plus le défilement continu (risque mémoire / lenteur) — mode page par page.
+_MAX_PDF_BYTES_NO_CONTINUOUS = 256 * 1024 * 1024
 _PDF_RASTER_ZOOM = 1.45
 _PDF_RASTER_ZOOM_DIALOG = 2.2
 _PDF_CONTAINER_HEIGHT = 880
@@ -32,6 +35,11 @@ _THUMB_MAX_SIDE = 132
 _PREFETCH_THUMB_WORKERS = 6
 _THUMB_DISPLAY_WIDTH = 110
 _GALLERY_SEGMENT_MAX = 24
+
+# Formats souvent concernés par EXIF Orientation : éviter st.image(chemin) brut (navigateur incohérent).
+_EXIF_ORIENTATION_SUFFIXES = frozenset(
+    {".jpg", ".jpeg", ".jpe", ".jfif", ".tif", ".tiff", ".bmp"}
+)
 
 
 def _gallery_caption_name(path: Path, *, max_len: int = 26) -> str:
@@ -159,27 +167,35 @@ def _pdf_preview_limit_key(file_path: Path) -> str:
 
 
 def _try_pdf_raster_continuous_scroll(file_path: Path) -> bool:
-    """Aperçu : quelques pages d’abord, puis « Charger plus » ; rendu mis en cache."""
+    """Aperçu : quelques pages d’abord, puis « Charger plus » ; rendu mis en cache (plafonné)."""
     try:
         sz = file_path.stat().st_size
     except OSError:
         return False
-    if sz == 0 or sz > _MAX_PDF_BYTES_RASTER:
+    if sz == 0:
         return False
+    # Très gros fichiers : pas de bandeau « toutes les pages » — le mode page par page prendra le relais.
+    if sz > _MAX_PDF_BYTES_NO_CONTINUOUS:
+        return False
+    if sz > _MAX_PDF_BYTES_SOFT_WARN:
+        st.caption(
+            "Fichier volumineux : le défilement continu peut être lent au premier chargement (pages mises en cache ensuite)."
+        )
 
     path_s, mtime_ns = _path_stat_key(file_path)
     n = _cached_pdf_page_count(path_s, mtime_ns)
     if n is None:
         return False
-    if n > _MAX_PDF_PAGES_RASTER:
-        return False
+    n_cap = min(n, _MAX_PDF_PAGES_RASTER)
 
     ss_key = _pdf_preview_limit_key(file_path)
     if ss_key not in st.session_state:
-        st.session_state[ss_key] = min(_PDF_PREVIEW_INITIAL_PAGES, n)
+        st.session_state[ss_key] = min(_PDF_PREVIEW_INITIAL_PAGES, n_cap)
 
     want = int(st.session_state[ss_key])
-    pages_to_render = min(n, want, _MAX_PDF_PAGES_RASTER)
+    want = max(1, min(want, n_cap))
+    st.session_state[ss_key] = want
+    pages_to_render = min(n_cap, want)
 
     ok = _render_pdf_raster_pages(
         file_path,
@@ -190,26 +206,73 @@ def _try_pdf_raster_continuous_scroll(file_path: Path) -> bool:
     if not ok:
         return False
 
-    if n > pages_to_render:
+    if n > _MAX_PDF_PAGES_RASTER:
+        st.caption(
+            f"Document de {n} pages — aperçu limité aux {_MAX_PDF_PAGES_RASTER} premières dans ce mode (défilement)."
+        )
+    if n_cap > pages_to_render:
         if st.button(
             "Charger plus de pages",
             key=f"{ss_key}_more",
             width="stretch",
-            help=f"Ajoute jusqu’à {_PDF_PREVIEW_PAGE_STEP} pages à l’aperçu (déjà affichées : {pages_to_render} / {n}).",
+            help=f"Ajoute jusqu’à {_PDF_PREVIEW_PAGE_STEP} pages à l’aperçu (déjà affichées : {pages_to_render} / {n_cap}).",
         ):
-            st.session_state[ss_key] = min(n, want + _PDF_PREVIEW_PAGE_STEP)
+            st.session_state[ss_key] = min(n_cap, want + _PDF_PREVIEW_PAGE_STEP)
             st.rerun()
-        st.caption(f"Aperçu partiel : {pages_to_render} / {n} page(s) — les pages rendues sont mises en cache.")
+        st.caption(
+            f"Aperçu partiel : {pages_to_render} / {n_cap} page(s) affichées — les pages rendues sont mises en cache."
+        )
     return True
 
 
-def _pdf_expand_controls(file_path: Path, *, raster_ok: bool) -> None:
+def _pdf_ui_prefs_key(file_path: Path) -> str:
+    path_s, _ = _path_stat_key(file_path)
+    h = hashlib.sha256(path_s.encode("utf-8")).hexdigest()[:16]
+    return f"pe_pdf_scroll_{h}"
+
+
+def _pdf_paginated_session_key(file_path: Path, prefix: str) -> str:
+    path_s, _ = _path_stat_key(file_path)
+    h = hashlib.sha256(path_s.encode("utf-8")).hexdigest()[:16]
+    return f"pe_pdf1_{prefix}_{h}"
+
+
+def _render_pdf_paginated_viewer(
+    file_path: Path,
+    *,
+    zoom: float,
+    container_height: int,
+    key_prefix: str,
+) -> bool:
+    """Une seule page dans le DOM + navigation (adapté aux gros PDF). Retourne False si PyMuPDF indisponible ou PDF illisible."""
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        return False
+    path_s, mtime_ns = _path_stat_key(file_path)
+    n = _cached_pdf_page_count(path_s, mtime_ns)
+    if n is None or n <= 0:
+        return False
+    sk_sl = _pdf_paginated_session_key(file_path, f"{key_prefix}_pg")
+    pg = st.slider("Page", min_value=1, max_value=n, key=sk_sl)
+    idx = int(pg) - 1
+    st.caption(f"Page {idx + 1} / {n}")
+    jpeg = _cached_pdf_page_jpeg(path_s, mtime_ns, idx, zoom)
+    if not jpeg:
+        st.warning("Rendu de cette page impossible.")
+        return True
+    with st.container(height=container_height, border=True):
+        st.image(io.BytesIO(jpeg), width="stretch")
+    return True
+
+
+def _pdf_expand_controls(file_path: Path, *, dialog_uses_fitz: bool) -> None:
     """Bouton « Agrandir » + ouverture de la boîte de dialogue pour le même fichier."""
     key = _pdf_expand_button_key(file_path)
     resolved = str(file_path.resolve())
     if st.button("🔍 Agrandir la fenêtre PDF", key=key, width="stretch", help="Ouvre un aperçu plus grand dans une fenêtre modale."):
         st.session_state["pe_pdf_dialog_path"] = resolved
-        st.session_state["pe_pdf_dialog_mode"] = "raster" if raster_ok else "stpdf"
+        st.session_state["pe_pdf_dialog_mode"] = "fitz" if dialog_uses_fitz else "stpdf"
     if st.session_state.get("pe_pdf_dialog_path") == resolved:
         _pdf_enlarged_dialog()
 
@@ -221,31 +284,23 @@ def _pdf_expand_controls(file_path: Path, *, raster_ok: bool) -> None:
 )
 def _pdf_enlarged_dialog() -> None:
     path_s = st.session_state.get("pe_pdf_dialog_path")
-    mode = st.session_state.get("pe_pdf_dialog_mode", "raster")
+    mode = st.session_state.get("pe_pdf_dialog_mode", "fitz")
     if not path_s:
         return
     p = Path(path_s)
-    if mode == "raster":
+    if mode == "fitz":
         path_key, mtime_ns = _path_stat_key(p)
-        n = _cached_pdf_page_count(path_key, mtime_ns)
-        if n is None:
+        if _cached_pdf_page_count(path_key, mtime_ns) is None:
             st.caption("Lecture du PDF impossible.")
-            return
-        pr = min(n, _MAX_PDF_PAGES_RASTER)
-        if not _render_pdf_raster_pages(
-            p,
-            container_height=_PDF_CONTAINER_HEIGHT_DIALOG,
-            zoom=_PDF_RASTER_ZOOM_DIALOG,
-            pages_to_render=pr,
-        ):
-            st.caption("Rendu image indisponible : lecteur intégré.")
-            try:
-                st.pdf(str(p), height="stretch")
-            except Exception:
-                st.error("Impossible d’afficher ce PDF.")
-        elif n > pr:
-            st.caption(f"Aperçu limité aux {pr} premières pages (limite de sécurité).")
-    else:
+            mode = "stpdf"
+        else:
+            _render_pdf_paginated_viewer(
+                p,
+                zoom=_PDF_RASTER_ZOOM_DIALOG,
+                container_height=_PDF_CONTAINER_HEIGHT_DIALOG,
+                key_prefix="dlg",
+            )
+    if mode == "stpdf":
         try:
             st.pdf(str(p), height="stretch")
         except Exception as exc:
@@ -266,6 +321,18 @@ def _jpeg_try_draft(im: Any, max_w: int, max_h: int) -> None:
             im.draft("L", (max_w, max_h))
         except Exception:
             pass
+
+
+def _pil_apply_exif_transpose(im: Any) -> Any:
+    """Applique la balise EXIF Orientation (photos smartphone / appareils photo)."""
+    try:
+        from PIL import ImageOps
+    except ImportError:
+        return im
+    try:
+        return ImageOps.exif_transpose(im)
+    except Exception:
+        return im
 
 
 def _pil_to_rgb(im: Any) -> Any:
@@ -296,6 +363,7 @@ def _image_pixel_size_cached(path_str: str, mtime_ns: int) -> tuple[int, int] | 
         return None
     try:
         with Image.open(path_str) as im:
+            im = _pil_apply_exif_transpose(im)
             return im.size
     except Exception:
         return None
@@ -319,6 +387,7 @@ def _cached_image_jpeg_display(path_str: str, mtime_ns: int, max_width: int, qua
                 im.seek(0)
             _jpeg_try_draft(im, max_width, max_width)
             im.load()
+            im = _pil_apply_exif_transpose(im)
             rgb = _pil_to_rgb(im)
             w, h = rgb.size
             if w > max_width:
@@ -345,6 +414,7 @@ def _cached_image_jpeg_thumb(path_str: str, mtime_ns: int, max_side: int, qualit
             # Décoder vers ~2× la vignette : moins de pixels qu’en pleine résolution
             _jpeg_try_draft(im, max_side * 3, max_side * 3)
             im.load()
+            im = _pil_apply_exif_transpose(im)
             rgb = _pil_to_rgb(im)
             rgb.thumbnail((max_side, max_side), Image.Resampling.BILINEAR)
             buf = io.BytesIO()
@@ -380,12 +450,14 @@ def _st_image_cached_or_raw(path: Path, *, max_width: int | None, thumb_side: in
     """
     Aperçu image : si le fichier est déjà assez petit en pixels, envoi direct au navigateur
     (évite décodage complet + ré-encodage JPEG — souvent la cause des lenteurs sur JPG « web »).
+    JPEG/TIFF/BMP passent toujours par PIL + EXIF Orientation pour un rendu cohérent.
     Sinon vignette / aperçu redimensionné mis en cache.
     """
     path_s, mtime_ns = _path_stat_key(path)
     dims = _image_pixel_size(path)
+    use_exif_safe_pipeline = path.suffix.lower() in _EXIF_ORIENTATION_SUFFIXES
 
-    if dims is not None:
+    if dims is not None and not use_exif_safe_pipeline:
         w, h = dims
         if thumb_side is not None:
             if max(w, h) <= thumb_side:
@@ -409,43 +481,84 @@ def _st_image_cached_or_raw(path: Path, *, max_width: int | None, thumb_side: in
 
 
 def display_pdf_file(file_path: Path) -> None:
-    """Affiche un PDF (raster PyMuPDF ou lecteur intégré) et les contrôles « Agrandir »."""
+    """Affiche un PDF (par défaut une page à la fois ; défilement continu en option ; lecteur intégré en secours)."""
     mime_type, _ = mimetypes.guess_type(str(file_path))
-    raster_ok = _try_pdf_raster_continuous_scroll(file_path)
-    if raster_ok:
-        st.caption("Aperçu en défilement continu (pages rendues en JPEG, cache activé).")
-    else:
-        try:
-            try:
-                sz = file_path.stat().st_size
-            except OSError:
-                sz = 0
-            if sz > _MAX_PDF_BYTES_RASTER:
-                st.caption(
-                    "Fichier volumineux : affichage avec le lecteur intégré Streamlit (hors rendu image)."
-                )
-            st.pdf(str(file_path), height="stretch")
-        except Exception as exc:
-            hint = (
-                "L’aperçu intégré repose sur le paquet **streamlit-pdf** "
-                "(installé avec `pip install \"streamlit[pdf]\"` ou `pip install streamlit-pdf`). "
-                "Utilisez le **même interpréteur Python** que pour lancer Streamlit (ex. le `.venv` du projet)."
-            )
-            if not _streamlit_pdf_component_available():
-                st.warning(f"{hint}\n\n*(module `streamlit_pdf` introuvable dans cet environnement)*")
-            else:
-                st.warning(f"{hint}\n\n*Erreur : `{exc}`*")
-            with open(file_path, "rb") as f:
-                st.download_button(
-                    label="Télécharger le PDF",
-                    data=f.read(),
-                    file_name=file_path.name,
-                    mime=mime_type or "application/pdf",
-                    width="stretch",
-                )
-            return
+    path_s, mtime_ns = _path_stat_key(file_path)
+    n_pages = _cached_pdf_page_count(path_s, mtime_ns)
+    dialog_uses_fitz = n_pages is not None
 
-    _pdf_expand_controls(file_path, raster_ok=raster_ok)
+    try:
+        file_uri = file_path.resolve().as_uri()
+    except ValueError:
+        file_uri = ""
+
+    row = st.columns([1, 1])
+    with row[0]:
+        if file_uri:
+            st.link_button(
+                "Ouvrir dans une nouvelle fenêtre",
+                file_uri,
+                help="Ouvre le PDF avec le lecteur par défaut (navigateur ou Adobe, selon le système). "
+                "Si le navigateur bloque les liens file://, enregistrez le fichier ou utilisez le dossier du projet.",
+                width="stretch",
+            )
+    with row[1]:
+        scroll_key = _pdf_ui_prefs_key(file_path)
+        use_scroll = st.toggle(
+            "Défilement continu",
+            key=scroll_key,
+            help="Plusieurs pages en JPEG dans un panneau défilant. Désactivé par défaut (une page à la fois, plus léger).",
+        )
+
+    raster_ok = False
+    if use_scroll:
+        raster_ok = _try_pdf_raster_continuous_scroll(file_path)
+        if raster_ok:
+            st.caption("Aperçu en défilement continu (pages rendues en JPEG, cache activé).")
+        elif dialog_uses_fitz:
+            st.caption("Défilement continu indisponible pour ce fichier — affichage page par page.")
+
+    if not raster_ok:
+        if _render_pdf_paginated_viewer(
+            file_path,
+            zoom=_PDF_RASTER_ZOOM,
+            container_height=_PDF_CONTAINER_HEIGHT,
+            key_prefix="main",
+        ):
+            if not use_scroll:
+                st.caption("Aperçu page par page (défaut).")
+        else:
+            try:
+                try:
+                    sz = file_path.stat().st_size
+                except OSError:
+                    sz = 0
+                if sz > _MAX_PDF_BYTES_SOFT_WARN:
+                    st.caption(
+                        "Fichier volumineux : lecteur intégré Streamlit (peut charger tout le document dans le navigateur)."
+                    )
+                st.pdf(str(file_path), height="stretch")
+            except Exception as exc:
+                hint = (
+                    "L’aperçu intégré repose sur le paquet **streamlit-pdf** "
+                    "(installé avec `pip install \"streamlit[pdf]\"` ou `pip install streamlit-pdf`). "
+                    "Utilisez le **même interpréteur Python** que pour lancer Streamlit (ex. le `.venv` du projet)."
+                )
+                if not _streamlit_pdf_component_available():
+                    st.warning(f"{hint}\n\n*(module `streamlit_pdf` introuvable dans cet environnement)*")
+                else:
+                    st.warning(f"{hint}\n\n*Erreur : `{exc}`*")
+                with open(file_path, "rb") as f:
+                    st.download_button(
+                        label="Télécharger le PDF",
+                        data=f.read(),
+                        file_name=file_path.name,
+                        mime=mime_type or "application/pdf",
+                        width="stretch",
+                    )
+                return
+
+    _pdf_expand_controls(file_path, dialog_uses_fitz=dialog_uses_fitz)
 
 
 def display_image_gallery(paths: list[Path], *, session_key_suffix: str) -> None:
@@ -487,7 +600,10 @@ def display_image_gallery(paths: list[Path], *, session_key_suffix: str) -> None
             width="stretch",
         )
 
-    st.caption("Vignettes : même ordre que la numérotation ; la sélection se fait au-dessus.")
+    st.caption(
+        "Vignettes : même ordre que la liste ci-dessus (tri : type de fichier, puis chemin). "
+        "La sélection se fait au-dessus."
+    )
 
     thumb_cols = 6
     sel = int(st.session_state.get(idx_key, idx))
