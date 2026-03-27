@@ -1,6 +1,6 @@
 # Consultation documentaire (MVP)
 
-Application **locale** en Python / Streamlit : les lignes d’un **CSV** ou d’un **Excel (.xlsx)** deviennent des **fiches lisibles**, avec ouverture des **fichiers associés** (PDF, images, audio, vidéo, ou téléchargement) stockés dans un **dossier sur votre machine**. Pour une même notice, **PDF et images** peuvent s’afficher **l’un sous l’autre** (aperçu PDF puis galerie d’images avec sélecteur). Aucun dépôt cloud ni base de données.
+Application **locale** en Python / Streamlit : les lignes d’un **CSV** ou d’un **Excel (.xlsx)** deviennent des **fiches lisibles**, avec accès aux **fichiers associés** (PDF, images, audio, vidéo, ou téléchargement) stockés dans un **dossier sur votre machine**. L’aperçu PDF / galerie d’images dans l’app est **sur demande** ; des **liens locaux** ouvrent les fichiers ou dossiers avec les applications du système. Aucun dépôt cloud ni base de données.
 
 ## Utilisation simple (utilisateurs non techniques)
 
@@ -125,6 +125,7 @@ PassionExcel/
 │   ├── notice_helpers.py  # Libellés et normalisation
 │   ├── display.py         # PDF (PyMuPDF), images, cache, galerie
 │   ├── ui_notice.py       # Fiche notice / panneau documents / styles
+│   ├── shell_open.py      # Ouvrir un dossier dans l’explorateur (OS)
 │   └── folder_picker.py   # Dialogue fichier local (Tk, hors Streamlit Cloud)
 ├── examples/
 │   └── sample_notices.csv
@@ -138,9 +139,9 @@ PassionExcel/
 - **Streamlit** : interface web locale rapide à mettre en place, adaptée à un MVP de consultation ; **fragment** sur le panneau documents pour limiter les reruns inutiles.
 - **pandas** : lecture tabulaire unifiée (CSV / Excel) et filtrage.
 - **openpyxl** : moteur Excel pour `.xlsx` (standard avec pandas).
-- **Résolution des fichiers** : d’abord `dossier_racine / nom_indiqué`, puis recherche récursive par nom de fichier ; **aucun contenu** de document n’est lu tant qu’une notice n’est pas affichée (seuls les tests d’existence et l’affichage chargent les médias).
+- **Résolution des fichiers** : d’abord `dossier_racine / nom_indiqué`, puis recherche récursive par nom de fichier. **Panneau documents** : liens `file://` par fichier, ouverture du **dossier racine** ou du **dossier parent** dans l’explorateur ; aperçu PDF / galerie **après** boutons « Charger PDF » / « Charger images ».
 - **PDF** : par défaut **une page à la fois** (curseur) ; option **défilement continu** ; lien **ouvrir dans une nouvelle fenêtre** (lecteur système via `file://`) ; lecteur `st.pdf` en dernier recours si PyMuPDF indisponible.
-- **Images** : **Pillow** (redimensionnement, vignettes, JPEG) ; **orientation EXIF** appliquée (`exif_transpose`) ; ordre d’affichage défini par le tri des chemins résolus (voir `files.py`), pas par la date de fichier sur disque.
+- **Images** : **Pillow** (redimensionnement, vignettes, JPEG) ; **orientation EXIF** appliquée (`exif_transpose`) ; ordre d’affichage défini par le tri des chemins résolus (voir `files.py`). Au-delà d’un seuil (~18 images), la **grille de vignettes** est chargée **sur demande** pour éviter de décoder des dizaines de fichiers à chaque interaction.
 - **Recherche** : sous-chaîne **sans expression régulière** (`regex=False`) pour éviter les pièges pour les utilisateurs SHS.
 - **Sécurité minimale** : les chemins **absolus** dans le tableur sont ignorés pour le lien fichier ; seul le contenu sous le dossier racine est pris en compte.
 

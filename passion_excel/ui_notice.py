@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from passion_excel.display import display_image_gallery, display_linked_file, display_pdf_file
+from passion_excel.shell_open import open_folder
 from passion_excel.files import (
     MEDIA_KIND_LABELS_FR,
     collect_matching_paths,
@@ -26,6 +27,23 @@ from passion_excel.notice_helpers import normalize_value
 
 def _esc(s: str) -> str:
     return html.escape(s, quote=True)
+
+
+def _render_file_links(paths: list[Path], *, key_prefix: str) -> None:
+    """Liens file:// vers chaque fichier (ouverture avec l’application par défaut du système)."""
+    if not paths:
+        return
+    st.caption("Ouvrir avec l’application par défaut (lien local) :")
+    for j, p in enumerate(paths):
+        try:
+            uri = p.resolve().as_uri()
+        except ValueError:
+            uri = ""
+        label = p.name if len(p.name) <= 72 else p.name[:69] + "…"
+        if not uri:
+            st.caption(f"• `{label}` — lien indisponible.")
+            continue
+        st.link_button(label, uri, key=f"pe_lk_{key_prefix}_{j}", help=str(p))
 
 
 def _dedupe_file_names_ordered(names: list[str]) -> list[str]:
@@ -394,6 +412,29 @@ def render_document_panel(
     kind_label = MEDIA_KIND_LABELS_FR.get(media_kind, media_kind)
     st.caption(f"Filtre de type actuel : **{kind_label}** (modifiable dans la barre latérale).")
 
+    r1, r2 = st.columns(2)
+    with r1:
+        try:
+            root_uri = assets_path.resolve().as_uri()
+        except ValueError:
+            root_uri = ""
+        if root_uri:
+            st.link_button(
+                "Dossier racine (lien)",
+                root_uri,
+                key="pe_root_uri_link",
+                help="Ouvre le dossier racine des documents (comportement selon le système).",
+            )
+    with r2:
+        if st.button(
+            "Dossier racine dans l’explorateur",
+            key="pe_root_shell_open",
+            help="Ouvre le dossier racine dans le gestionnaire de fichiers.",
+        ):
+            ok, err = open_folder(assets_path)
+            if not ok:
+                st.warning(f"Impossible d’ouvrir le dossier : {err}")
+
     if len(names) > 1:
         st.markdown(
             f"""
@@ -497,19 +538,62 @@ def render_document_panel(
                 )
                 continue
 
-            st.markdown(
-                f'<p class="pe-doc-path">Chemin résolu : {_esc(str(resolved))}</p>',
-                unsafe_allow_html=True,
-            )
             if not display_paths:
                 display_paths = [resolved]
+
             pdfs, imgs = split_matches_pdf_images(display_paths)
             gal_suffix = hashlib.sha256(f"{expected}|{i}".encode("utf-8")).hexdigest()[:16]
+            key_pdf = f"pe_show_pdf_{gal_suffix}"
+            key_img = f"pe_show_img_{gal_suffix}"
             skip: set[Path] = set()
-            if pdfs:
+
+            col_left, col_right = st.columns([3, 1])
+            with col_left:
+                st.markdown(
+                    f'<p class="pe-doc-path">Chemin résolu : {_esc(str(resolved))}</p>',
+                    unsafe_allow_html=True,
+                )
+                _render_file_links(display_paths, key_prefix=gal_suffix)
+            with col_right:
+                st.caption("Aperçu intégré")
+                if pdfs:
+                    if st.button(
+                        "Charger PDF",
+                        key=f"{key_pdf}_btn",
+                        help="Affiche le lecteur PDF dans l’application.",
+                    ):
+                        st.session_state[key_pdf] = True
+                if imgs:
+                    if st.button(
+                        "Charger images",
+                        key=f"{key_img}_btn",
+                        help="Affiche la galerie d’images dans l’application.",
+                    ):
+                        st.session_state[key_img] = True
+                try:
+                    folder_uri = resolved.parent.resolve().as_uri()
+                except ValueError:
+                    folder_uri = ""
+                if folder_uri:
+                    st.link_button(
+                        "Dossier (lien)",
+                        folder_uri,
+                        key=f"pe_fold_uri_{gal_suffix}",
+                        help="Ouvre le dossier parent du fichier résolu.",
+                    )
+                if st.button(
+                    "Dossier (explorateur)",
+                    key=f"pe_fold_sh_{gal_suffix}",
+                    help="Ouvre le dossier parent dans le gestionnaire de fichiers.",
+                ):
+                    ok, err = open_folder(resolved)
+                    if not ok:
+                        st.warning(f"Impossible d’ouvrir le dossier : {err}")
+
+            if pdfs and st.session_state.get(key_pdf, False):
                 display_pdf_file(pdfs[0])
                 skip.add(pdfs[0])
-            if imgs:
+            if imgs and st.session_state.get(key_img, False):
                 display_image_gallery(imgs, session_key_suffix=gal_suffix)
                 skip.update(imgs)
             if not pdfs and not imgs:

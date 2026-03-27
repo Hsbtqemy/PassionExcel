@@ -35,6 +35,10 @@ _THUMB_MAX_SIDE = 132
 _PREFETCH_THUMB_WORKERS = 6
 _THUMB_DISPLAY_WIDTH = 110
 _GALLERY_SEGMENT_MAX = 24
+# Au-delà : les vignettes ne sont pas rendues tant que l’utilisateur n’a pas choisi de les charger (évite N décodages à chaque rerun).
+_GALLERY_THUMB_GRID_LAZY_THRESHOLD = 18
+# Limite le pré-chauffage parallèle (ThreadPool) pour les très grandes galeries.
+_WARM_THUMB_MAX_PATHS = 48
 
 # Formats souvent concernés par EXIF Orientation : éviter st.image(chemin) brut (navigateur incohérent).
 _EXIF_ORIENTATION_SUFFIXES = frozenset(
@@ -428,6 +432,7 @@ def _warm_gallery_thumb_cache(paths: list[Path]) -> None:
     """Préremplit le cache des vignettes en parallèle (premier affichage plus fluide)."""
     if len(paths) <= 1:
         return
+    to_warm = paths[:_WARM_THUMB_MAX_PATHS]
 
     def warm_one(p: Path) -> None:
         path_s, mtime_ns = _path_stat_key(p)
@@ -436,14 +441,14 @@ def _warm_gallery_thumb_cache(paths: list[Path]) -> None:
             return
         _cached_image_jpeg_thumb(path_s, mtime_ns, _THUMB_MAX_SIDE, _JPEG_QUALITY_THUMB)
 
-    n = len(paths)
+    n = len(to_warm)
     workers = min(_PREFETCH_THUMB_WORKERS, n)
     if workers < 2:
-        for p in paths:
+        for p in to_warm:
             warm_one(p)
         return
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        list(ex.map(warm_one, paths))
+        list(ex.map(warm_one, to_warm))
 
 
 def _st_image_cached_or_raw(path: Path, *, max_width: int | None, thumb_side: int | None) -> None:
@@ -578,8 +583,6 @@ def display_image_gallery(paths: list[Path], *, session_key_suffix: str) -> None
 
     _st_image_cached_or_raw(paths[idx], max_width=_GALLERY_MAIN_MAX_WIDTH, thumb_side=None)
 
-    _warm_gallery_thumb_cache(paths)
-
     if len(paths) <= _GALLERY_SEGMENT_MAX:
         st.segmented_control(
             "Image à afficher",
@@ -599,6 +602,30 @@ def display_image_gallery(paths: list[Path], *, session_key_suffix: str) -> None
             label_visibility="collapsed",
             width="stretch",
         )
+
+    lazy_thumbs = len(paths) > _GALLERY_THUMB_GRID_LAZY_THRESHOLD
+    show_thumbs_key = f"pe_gal_show_thumbs_{session_key_suffix}"
+    if lazy_thumbs:
+        show_thumbs = bool(st.session_state.get(show_thumbs_key, False))
+    else:
+        show_thumbs = True
+
+    if lazy_thumbs and not show_thumbs:
+        st.caption(
+            f"Plus de {_GALLERY_THUMB_GRID_LAZY_THRESHOLD} images : les vignettes ne sont pas chargées par défaut "
+            "(décodage et bande passante). Utilisez la liste ci-dessus pour changer d’image."
+        )
+        if st.button(
+            f"Afficher les vignettes ({len(paths)} miniatures)",
+            key=f"{show_thumbs_key}_btn",
+            width="stretch",
+            help="Charge et affiche toutes les miniatures sous la liste (peut prendre quelques secondes).",
+        ):
+            st.session_state[show_thumbs_key] = True
+            st.rerun()
+        return
+
+    _warm_gallery_thumb_cache(paths)
 
     st.caption(
         "Vignettes : même ordre que la liste ci-dessus (tri : type de fichier, puis chemin). "
