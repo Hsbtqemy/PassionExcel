@@ -15,5 +15,6 @@ Thumbs.db
 *.zip
 installer/dist/
 installer/windows/embed/
+installer/windows/app_icon.ico
 installer/mac/embed/
 /python/

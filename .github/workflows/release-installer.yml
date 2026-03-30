@@ -47,6 +47,13 @@ jobs:
         shell: pwsh
         run: choco install innosetup -y --no-progress
 
+      - name: Générer app_icon.ico (optionnel, si app_icon.png présent)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install Pillow -q
+          python "$env:GITHUB_WORKSPACE\installer\windows\png_to_ico.py"
+
       - name: Compiler l’installateur
         shell: pwsh
         run: |

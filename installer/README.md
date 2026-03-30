@@ -20,8 +20,9 @@ Les dossiers **`installer/windows/embed/`** et **`installer/mac/embed/`** sont *
    powershell -ExecutionPolicy Bypass -File .\prepare_embed_python.ps1
    ```
    Cela crée `embed\python\` avec la distribution **embeddable** officielle (amd64), **pip** inclus.
+   - **Icône (optionnel)** : placez `installer\windows\app_icon.png` (PNG carré, idéalement ≥ 256 px). Au lancement, **`build.bat`** installe Pillow dans l’embed et exécute **`png_to_ico.py`** pour produire **`app_icon.ico`** (raccourcis Menu Démarrer / Bureau, assistant d’installation, désinstallation). Sans ce fichier, le comportement reste inchangé.
 3. **Ou** double-cliquez sur **`build.bat`** : si `embed\python\` est absent, le script lance `prepare_embed_python.ps1` (téléchargement). Sans ce dossier, **Inno Setup échoue** sur la ligne `embed\python\*` (le compilateur exige que les fichiers sources existent).
-4. Résultat : `installer\dist\PassionExcel_Setup_0.2.6.exe` (le numéro suit `#define MyAppVersion` dans `PassionExcel.iss`).
+4. Résultat : `installer\dist\PassionExcel_Setup_0.2.7.exe` (le numéro suit `#define MyAppVersion` dans `PassionExcel.iss`).
 
 L’utilisateur final obtient une copie dans **`%LOCALAPPDATA%\PassionExcel`** (sans espace dans le nom du dossier) avec raccourcis ; **`run.bat`** utilisera le Python copié dans `python\` s’il n’a pas déjà Python 3.11+ sur le PATH.
 
