@@ -1,0 +1,69 @@
+# Construit le .app macOS (Python embarqué) et publie le .dmg en release GitHub pour les tags v*
+name: Release (installateur Mac)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac-installer:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Définir la version depuis le tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${{ github.ref_name }}"
+          ver="${tag#v}"
+          if [[ ! "$ver" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Le tag doit ressembler à vX.Y ou vX.Y.Z (ex. v0.2.0). Reçu : $tag"
+            exit 1
+          fi
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $ver" installer/mac/Info.plist
+          echo "VERSION=$ver" >> "$GITHUB_ENV"
+          echo "CFBundleShortVersionString = $ver"
+
+      - name: Construire le .app et le DMG (Python embarqué inclus)
+        run: |
+          chmod +x installer/mac/prepare_embed_python.sh installer/mac/build_app.sh installer/mac/PassionExcel
+          installer/mac/build_app.sh
+
+      - name: Vérifier que le .dmg existe
+        run: |
+          dmg=$(find installer/mac/dist -name "*.dmg" | head -1)
+          if [[ -z "$dmg" ]]; then
+            echo "::error::Aucun .dmg dans installer/mac/dist"
+            ls -la installer/mac/dist/ || true
+            exit 1
+          fi
+          echo "OK: $dmg ($(du -sh "$dmg" | cut -f1))"
+
+      - name: Artefact (.dmg)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PassionExcel-Mac
+          path: installer/mac/dist/*.dmg
+
+      - name: Publier le .dmg sur la release GitHub
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ github.ref_name }}"
+          dmg=$(find installer/mac/dist -name "*.dmg" | head -1)
+          if [[ -z "$dmg" ]]; then
+            echo "::error::Aucun .dmg à publier"
+            exit 1
+          fi
+          echo "Publication de : $dmg"
+          gh release view "$tag" 2>/dev/null \
+            || gh release create "$tag" --title "$tag" --generate-notes \
+            || true
+          gh release upload "$tag" "$dmg" --clobber

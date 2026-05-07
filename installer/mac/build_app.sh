@@ -41,7 +41,8 @@ fi
 echo "→ Paquet créé : $OUT_DIR/$APP_BUNDLE"
 
 if command -v hdiutil &>/dev/null; then
-  DMG="$OUT_DIR/PassionExcel_mac_0.1.0.dmg"
+  VER="${VERSION:-$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SCRIPT_DIR/Info.plist" 2>/dev/null || echo "0.0.0")}"
+  DMG="$OUT_DIR/PassionExcel_mac_${VER}.dmg"
   rm -f "$DMG"
   rm -f "$OUT_DIR/.dmg-tmp.dmg" 2>/dev/null || true
   echo "→ Création du DMG..."
