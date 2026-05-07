@@ -7,7 +7,7 @@
 #endif
 
 #define MyAppName "Passion Excel"
-#define MyAppVersion "0.2.7"
+#define MyAppVersion "0.2.8"
 ; Dossier sans espace (evite erreurs Windows sur raccourcis / chemins).
 #define MyInstallDirName "PassionExcel"
 #define MyAppPublisher "Passion Excel"
