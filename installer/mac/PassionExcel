@@ -9,6 +9,11 @@ cd "$APP"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 pick_python() {
+  # Le Python embarqué est prioritaire : garantit l'architecture et la version correctes.
+  if [[ -x "$EMBED" ]] && "$EMBED" -c "import sys; sys.exit(0 if sys.version_info>=(3,11) else 1)" 2>/dev/null; then
+    echo "$EMBED"
+    return 0
+  fi
   for cmd in python3 python; do
     if command -v "$cmd" &>/dev/null; then
       if "$cmd" -c "import sys; sys.exit(0 if sys.version_info>=(3,11) else 1)" 2>/dev/null; then
@@ -17,10 +22,6 @@ pick_python() {
       fi
     fi
   done
-  if [[ -x "$EMBED" ]] && "$EMBED" -c "import sys; sys.exit(0 if sys.version_info>=(3,11) else 1)" 2>/dev/null; then
-    echo "$EMBED"
-    return 0
-  fi
   return 1
 }
 
