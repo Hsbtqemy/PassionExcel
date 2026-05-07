@@ -4,16 +4,23 @@ Application **locale** en Python / Streamlit : les lignes d’un **CSV** ou d’
 
 ## Utilisation simple (utilisateurs non techniques)
 
-L’idée : **installer Python une fois**, puis lancer l’outil avec un **script** fourni — pas besoin de connaître la ligne de commande au quotidien.
+L’idée : **télécharger l’installateur** depuis la page Releases GitHub, l’exécuter, puis lancer l’outil — **Python n’a pas besoin d’être installé sur la machine**.
 
-### Python sur la machine (3.11 ou plus récent)
+### Installateurs prêts à l’emploi (releases GitHub)
 
-Le programme **détecte** d’abord un Python **déjà installé** (`python` / `python3`, et sous Windows le lanceur **`py -3`**). S’il est en **3.11+**, il est utilisé pour créer le dossier `.venv` et lancer Streamlit.
+| Système | Fichier à télécharger | Python requis ? |
+|---|---|---|
+| **Windows** | `PassionExcel_Setup_X.Y.Z.exe` | Non — embarqué |
+| **macOS** | `PassionExcel_mac_X.Y.Z.dmg` | Non — embarqué dans le `.app` |
 
-Si aucun Python adapté n’est trouvé, les lanceurs **`run.bat`** / **`run.sh`** cherchent un **Python embarqué** dans le dossier **`python/`** à côté de l’application (fourni par les installateurs après `prepare_embed_python`, voir `installer/README.md`).
+> **macOS — premier lancement :** l’application n’est pas signée par Apple. macOS peut la bloquer ; faites **clic droit → Ouvrir** (ou passez par Réglages Système → Confidentialité → « Ouvrir quand même »).
 
-| Système | Sans dossier `python/` embarqué |
-|--------|----------------------------------|
+### Python sur la machine (méthode alternative, sans installateur)
+
+Si vous préférez ne pas utiliser les installateurs, les lanceurs **`run.bat`** / **`run.sh`** détectent Python automatiquement : d’abord un Python **déjà installé** sur le système (`python` / `python3`, et sous Windows le lanceur **`py -3`** en 3.11+), sinon un **Python embarqué** dans le dossier **`python/`** à côté de l’application.
+
+| Système | Sans Python embarqué |
+|--------|----------------------|
 | **Windows** | [python.org/downloads](https://www.python.org/downloads/) — cochez **« Add python.exe to PATH »**. |
 | **macOS** | [python.org](https://www.python.org/downloads/) ou `brew install python`. |
 | **Linux** | Paquets `python3` et `python3-venv`. |
@@ -41,8 +48,8 @@ Envoyez-leur **tout le dossier du projet** (ou le dépôt GitHub en archive), pa
 
 ### Limites réalistes pour un public « lambda »
 
-- Il faut **accepter d’installer Python** (comme pour beaucoup d’outils scientifiques). Embarquer Python dans un **seul** `.exe` « tout-en-un » est possible mais lourd pour Streamlit ; les scripts et installateurs ci-dessous restent l’approche pragmatique.
-- Les **mises à jour** du programme : remplacer le dossier ou faire `git pull` si vous utilisez Git.
+- Les **installateurs embarquent Python** : aucune installation préalable requise. En revanche, sous macOS, l’absence de signature Apple impose un contournement Gatekeeper au premier lancement.
+- Les **mises à jour** du programme : télécharger le nouvel installateur depuis les releases GitHub, ou faire `git pull` si vous utilisez Git.
 
 ### Installateur Windows et paquet macOS (optionnel)
 
@@ -149,11 +156,18 @@ PassionExcel/
 
 Le dépôt peut être connecté à **[Streamlit Community Cloud](https://streamlit.io/cloud)** : fichier principal **`app.py`**, dépendances **`requirements.txt`**, Python **3.11+**. **Aucun secret** n’est requis par défaut. En revanche, l’app est conçue pour des **chemins locaux** et un **dossier médias** sur le disque : sur le cloud, seul le **téléversement** du tableur est vraiment adapté ; l’affichage des fichiers liés par chemin local ne fonctionne pas comme sur un poste de travail.
 
-## Installateur Windows (.exe)
+## Installateurs (Windows et macOS)
 
-Voir **`installer/README.md`** : compilation locale avec **Inno Setup 6** et **`installer/windows/build.bat`**. Sur **GitHub**, le workflow **`.github/workflows/release-installer.yml`** compile l’installateur et attache le **`.exe`** à une **release** lorsque vous poussez un **tag** `v*` (ex. `v0.2.7`).
+Voir **`installer/README.md`** pour la compilation locale.
 
-Le script **`run.sh`** n’a pas de phase de build : il est fourni tel quel pour macOS / Linux.
+Sur **GitHub**, deux workflows publient automatiquement les installateurs sur une **release** lorsque vous poussez un **tag** `v*` (ex. `v0.2.7`) :
+
+| Workflow | Fichier produit | Python |
+|---|---|---|
+| `release-installer.yml` | `PassionExcel_Setup_X.Y.Z.exe` (Inno Setup) | Embarqué via `prepare_embed_python.ps1` |
+| `release-installer-mac.yml` | `PassionExcel_mac_X.Y.Z.dmg` (`.app`) | Embarqué via `prepare_embed_python.sh` |
+
+Les deux workflows tournent en parallèle sur le même tag et publient leurs fichiers sur la même release GitHub.
 
 ## Feuille de route V1.1 (suggestions)
 
