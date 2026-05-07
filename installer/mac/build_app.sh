@@ -38,6 +38,21 @@ else
   echo "→ (Pas de dossier installer/mac/embed/python — l’app utilisera le Python système si disponible)"
 fi
 
+ICON_PNG="$REPO_ROOT/installer/windows/app_icon.png"
+if [[ -f "$ICON_PNG" ]] && command -v sips &>/dev/null && command -v iconutil &>/dev/null; then
+  echo "→ Génération de app_icon.icns..."
+  ICONSET_DIR="$(mktemp -d)"
+  ICONSET="$ICONSET_DIR/app_icon.iconset"
+  mkdir -p "$ICONSET"
+  for size in 16 32 128 256 512; do
+    sips -z $size $size "$ICON_PNG" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+    sips -z $((size*2)) $((size*2)) "$ICON_PNG" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$ICONSET" -o "$OUT_DIR/$APP_BUNDLE/Contents/Resources/app_icon.icns"
+  rm -rf "$ICONSET_DIR"
+  echo "→ Icône copiée dans le bundle"
+fi
+
 echo "→ Paquet créé : $OUT_DIR/$APP_BUNDLE"
 
 if command -v hdiutil &>/dev/null; then
